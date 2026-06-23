@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyNews — all your topics, one feed</title>
+  <meta name="description" content="A self-hosted news aggregator across 16 topics, with a REST + MCP API your agents can read." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./landing.css" />
+</head>
+<body>
+  <nav class="nav">
+    <div class="wrap nav__in">
+      <a class="brand" href="./index.html">MyNews</a>
+      <div class="nav__links">
+        <a href="#topics">Topics</a>
+        <a href="#agents">For agents</a>
+        <a href="#how">How it works</a>
+        <a class="btn btn--primary" href="./dashboard.html">Open the feed →</a>
+        <a class="btn btn--ghost" href="./dashboard.html">Feed →</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap hero__grid">
+      <div>
+        <span class="eyebrow mono">Live · 16 topics · RSS</span>
+        <h1>All your topics. One feed.</h1>
+        <p class="lede">Marvel to markets, anime to AI agents — 16 topics pulled live from the open web,
+          sortable, time-filtered, and readable by your own agents.</p>
+        <div class="hero__cta">
+          <a class="btn btn--primary" href="./dashboard.html">Open the feed →</a>
+          <a class="btn btn--ghost" href="#agents">Read the API</a>
+        </div>
+      </div>
+      <div class="code-card reveal" aria-hidden="true">
+        <div class="code-card__bar"><span>GET /api/news?category=ai,crypto&amp;since=24</span><span class="chip-ok">200 OK</span></div>
+<pre><span class="m">{</span>
+  <span class="k">"count"</span>: <span class="s">77</span>,
+  <span class="k">"totalReadingMinutes"</span>: <span class="s">214</span>,
+  <span class="k">"items"</span>: <span class="m">[{</span>
+    <span class="k">"title"</span>: <span class="s">"$170M Ether longs liquidated…"</span>,
+    <span class="k">"source"</span>: <span class="s">"cointelegraph.com"</span>,
+    <span class="k">"category"</span>: <span class="s">"crypto"</span>,
+    <span class="k">"publishedAt"</span>: <span class="s">"2026-06-23T21:40Z"</span>,
+    <span class="k">"readingMinutes"</span>: <span class="s">3</span>
+  <span class="m">}]</span>
+<span class="m">}</span></pre>
+      </div>
+    </div>
+  </header>
+
+  <section class="section" id="topics">
+    <div class="wrap">
+      <div class="section__head">
+        <span class="eyebrow mono">The lineup</span>
+        <h2>Sixteen topics, one stream</h2>
+        <p>Each topic aggregates several sources. Filter, sort by newest or category, and pick the
+          window you want — every card shows when it dropped and how long it takes to read.</p>
+      </div>
+      <div class="topics" id="topics-grid"></div>
+    </div>
+  </section>
+
+  <section class="section agents" id="agents">
+    <div class="wrap">
+      <div class="section__head">
+        <span class="eyebrow mono">Built for agents</span>
+        <h2>Your agents read it too</h2>
+        <p>The same data the page uses is an open REST API and an MCP server. Agents pull headlines,
+          then fetch the full readable text of any article — no scraping glue required.</p>
+      </div>
+      <div class="tools">
+        <div>
+          <div class="tool"><b>get_news</b><p>Headlines across topics — filter by category, timeframe, keyword; sort by newest or category.</p></div>
+          <div class="tool"><b>get_article</b><p>Full clean body text of one story by URL — boilerplate stripped, ready to summarize.</p></div>
+          <div class="tool"><b>list_categories</b><p>The available topic slugs and labels.</p></div>
+        </div>
+        <div class="code-card" aria-hidden="true">
+          <div class="code-card__bar"><span>mcp · tools</span><span class="chip-ok">stdio</span></div>
+<pre><span class="m">$</span> node mcp.js
+<span class="k">get_news</span>      <span class="m">→</span> headlines
+<span class="k">get_article</span>   <span class="m">→</span> full text
+<span class="k">list_categories</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="wrap">
+      <div class="section__head">
+        <span class="eyebrow mono">How it works</span>
+        <h2>RSS in, JSON out</h2>
+      </div>
+      <div class="flow">
+        <ol>
+          <li><b>Pull.</b> Every topic fetches a handful of RSS feeds — keyless, from the open web.</li>
+          <li><b>Cache.</b> Results hold for five minutes, so the page is instant and upstream stays happy.</li>
+          <li><b>Serve.</b> One API feeds the browser and your agents alike — read a list, then read any article in full.</li>
+        </ol>
+        <aside class="flow__aside">
+          <div class="big">0</div>
+          <p class="mono">API keys required</p>
+          <p>RSS covers all sixteen topics. Add a key only when you want more than a source's feed exposes.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <footer class="ft">
+    <div class="wrap">
+      <span><strong style="color:var(--color-ink)">MyNews</strong> · self-hosted news, readable by humans and agents</span>
+      <span>API: <code>GET /api/news</code> · <code>GET /api/article</code></span>
+    </div>
+  </footer>
+
+  <script>
+    // topic tiles from the live API; reveal-on-scroll
+    fetch("/api/categories").then((r) => r.json()).then((cats) => {
+      document.getElementById("topics-grid").innerHTML = cats
+        .map((c) => `<a class="topic" href="./dashboard.html">${c.label}<span>${c.slug}</span></a>`)
+        .join("");
+    }).catch(() => {});
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -40px 0px" });
+    document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+  </script>
+</body>
+</html>
