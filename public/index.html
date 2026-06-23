@@ -27,10 +27,11 @@
   <header class="hero">
     <div class="wrap hero__grid">
       <div>
-        <span class="eyebrow mono">Live · 16 topics · RSS</span>
+        <p class="kicker mono">Vazghen's news feed</p>
         <h1>All your topics. One feed.</h1>
-        <p class="lede">Marvel to markets, anime to AI agents — 16 topics pulled live from the open web,
-          sortable, time-filtered, and readable by your own agents.</p>
+        <p class="lede">Marvel to markets, anime to AI agents — 16 topics pulled live from the open web:
+          sortable, time-filtered, read-time on every story — and an API your own agents can read.</p>
+        <span class="eyebrow mono">Live · 16 topics · RSS · no API key</span>
         <div class="hero__cta">
           <a class="btn btn--primary" href="./dashboard.html">Open the feed →</a>
           <a class="btn btn--ghost" href="#agents">Read the API</a>
@@ -68,23 +69,37 @@
   <section class="section agents" id="agents">
     <div class="wrap">
       <div class="section__head">
-        <span class="eyebrow mono">Built for agents</span>
-        <h2>Your agents read it too</h2>
-        <p>The same data the page uses is an open REST API and an MCP server. Agents pull headlines,
-          then fetch the full readable text of any article — no scraping glue required.</p>
+        <span class="eyebrow mono">For agents · step by step</span>
+        <h2>Wire it to your AI agent in 3 steps</h2>
+        <p>The same data the page uses is a public REST API — no key, CORS open — plus an MCP server.
+          Point any agent at it, or drop one block into OpenClaw.</p>
       </div>
+
+      <div class="steps">
+        <ol>
+          <li><b>1 · Point at the API</b> Base URL <code>https://mynews-nine.vercel.app/api</code>. Open, keyless, CORS-enabled — any agent or script can call it.</li>
+          <li><b>2 · Get the headlines</b> <code>GET /api/news?category=ai,crypto&amp;since=24&amp;sort=newest</code> returns titles, sources, timestamps and read-time. MCP tool: <code>get_news</code>.</li>
+          <li><b>3 · Read the full story</b> <code>GET /api/article?url=…</code> returns the clean body text of any article — ready to summarize. MCP tool: <code>get_article</code>.</li>
+        </ol>
+      </div>
+
       <div class="tools">
+        <div class="openclaw">
+          <p class="mono" style="color:var(--color-accent);margin:0 0 var(--space-sm)">Already on OpenClaw? Add one block</p>
+          <div class="code-card" aria-hidden="true">
+            <div class="code-card__bar"><span>openclaw.json → mcp.servers</span><span class="chip-ok">add</span></div>
+<pre><span class="k">"mynews"</span>: <span class="m">{</span>
+  <span class="k">"command"</span>: <span class="s">"node"</span>,
+  <span class="k">"args"</span>: <span class="m">[</span><span class="s">"mcp.js"</span><span class="m">]</span>,
+  <span class="k">"env"</span>: <span class="m">{</span> <span class="k">"NEWS_API"</span>: <span class="s">"https://mynews-nine.vercel.app"</span> <span class="m">}</span>
+<span class="m">}</span></pre>
+          </div>
+          <p style="color:oklch(74% 0.012 256);font-size:var(--text-sm);margin-top:var(--space-sm)">Restart the gateway — every agent now has <b style="color:oklch(94% .005 256)">get_news</b>, <b style="color:oklch(94% .005 256)">get_article</b> and <b style="color:oklch(94% .005 256)">list_categories</b>.</p>
+        </div>
         <div>
           <div class="tool"><b>get_news</b><p>Headlines across topics — filter by category, timeframe, keyword; sort by newest or category.</p></div>
           <div class="tool"><b>get_article</b><p>Full clean body text of one story by URL — boilerplate stripped, ready to summarize.</p></div>
           <div class="tool"><b>list_categories</b><p>The available topic slugs and labels.</p></div>
-        </div>
-        <div class="code-card" aria-hidden="true">
-          <div class="code-card__bar"><span>mcp · tools</span><span class="chip-ok">stdio</span></div>
-<pre><span class="m">$</span> node mcp.js
-<span class="k">get_news</span>      <span class="m">→</span> headlines
-<span class="k">get_article</span>   <span class="m">→</span> full text
-<span class="k">list_categories</span></pre>
         </div>
       </div>
     </div>
@@ -113,7 +128,7 @@
 
   <footer class="ft">
     <div class="wrap">
-      <span><strong style="color:var(--color-ink)">MyNews</strong> · self-hosted news, readable by humans and agents</span>
+      <span><strong style="color:var(--color-ink)">MyNews</strong> — built by Vazghen · readable by humans and agents</span>
       <span>API: <code>GET /api/news</code> · <code>GET /api/article</code></span>
     </div>
   </footer>

@@ -1,14 +1,31 @@
-# MyNews
+# MyNews — Vazghen's news feed
 
-A multi-topic news aggregator. One Express server fetches RSS for 16 topics,
-caches for 5 min, and serves a browser feed plus a JSON + MCP API your OpenClaw
-agents can read. **No API keys required** — RSS is the whole live-data layer.
+A multi-topic news aggregator that doubles as an **API your AI agents can read**.
+One small Express server pulls RSS for 16 topics, serves a designed browser feed,
+and exposes the same data as a REST + MCP API — including full readable article
+text, not just headlines. **No API keys required.**
 
-- `/` — MyNews landing page
-- `/dashboard.html` — the live feed (filter, sort, timeframe, search)
-- `/api/*` — the agent API (REST), also exposed over MCP via `mcp.js`
+**Live:** https://mynews-nine.vercel.app · **Repo:** https://github.com/iamvazghen/mynews
 
-## Run it
+```
+/                 landing page
+/dashboard.html   the live feed — filter, sort by newest/category, timeframe, search
+/api/*            the agent API (REST), also exposed over MCP via mcp.js
+```
+
+### Why I built it (portfolio note)
+
+A focused full-stack project that solves a real problem I have: I read across ~16
+unrelated topics, and I want my own agents to read them too. It demonstrates:
+
+- **Full-stack JS** — Express API, RSS aggregation, in-memory caching, HTML→text article extraction.
+- **Design** — a hand-built Cobalt design system (OKLCH tokens, Space Grotesk / Inter / JetBrains Mono), responsive, reduced-motion-safe; no UI framework.
+- **Agent integration** — the same API is consumed by a browser **and** by LLM agents over **MCP**, so a scheduled agent can fetch headlines and then read full articles to summarize.
+- **Shipping** — deployed to Vercel (serverless) from GitHub with CI on push, and to a private VPS as a systemd service.
+
+It's deliberately small: ~1 backend file, 1 feed-config file, a static frontend, and an MCP shim.
+
+## Run it locally
 
 ```bash
 npm install
@@ -16,9 +33,8 @@ npm start          # → http://localhost:3000
 npm test           # unit checks for reading-time + filter/sort
 ```
 
-Open `http://localhost:3000`. The feed is live immediately — filter by category,
-sort by newest or category, pick a timeframe, search, see per-story and total
-read-time and relative timestamps.
+The feed is live immediately — every card shows when it dropped and how long it
+takes to read; sort by newest or category, pick a timeframe, search.
 
 ## The live feed — what's wired and how to change it
 
@@ -27,29 +43,26 @@ Everything goes through **`feeds.js`** — the only file you edit. Each category
 the page never breaks; swap it when convenient.
 
 - **Add a source:** drop another RSS URL into a category's `feeds` array.
-- **Add a category:** append a new `{ slug, label, feeds }` object. Frontend +
-  API + chips pick it up automatically.
-- **Find a feed:** most sites expose `/feed/`, `/rss`, or `/feed.xml`. Topics
-  without first-party RSS use Hacker News query feeds (`hnrss.org/newest?q=...`).
+- **Add a category:** append a new `{ slug, label, feeds }` object. Frontend, API and chips pick it up automatically.
+- **Find a feed:** most sites expose `/feed/`, `/rss`, or `/feed.xml`. Topics without first-party RSS use Hacker News query feeds (`hnrss.org/newest?q=...`).
 
-### Going deeper (optional API keys)
+### Optional API keys (none required)
 
-RSS covers all 16 topics today. Add a key only if you want more than a site's
-RSS exposes. Each is a 2-line change: add the key to a feed-fetch helper or a new
-handler.
+RSS covers all 16 topics today, so **nothing is needed to run or deploy**. Add a
+key only if you want more than a source's feed exposes — each is a small change:
 
 | Want | Source | Key |
 | --- | --- | --- |
 | Broad multi-source headlines | [NewsAPI](https://newsapi.org) / [GNews](https://gnews.io) | free tier |
-| Trending repos (richer than the RSS mirror) | GitHub `GET /search/repositories?sort=stars` | PAT (you already have one) |
+| Trending repos (richer than the RSS mirror) | GitHub `GET /search/repositories?sort=stars` | a PAT |
 | Reddit topic feeds | `reddit.com/r/<sub>/.rss` | none (already RSS) |
 | Crypto prices alongside news | CoinGecko | none |
 
-Store keys in a `.env` (add `dotenv`) — don't hardcode them.
+Store keys as env vars (add `dotenv`) — never hardcode them.
 
-## The agent API (this is your integration layer)
+## The API
 
-The same JSON the browser uses. CORS is open, so agents on any host can call it.
+CORS is open, so any agent or page can call it.
 
 ```
 GET /api/categories
@@ -63,67 +76,61 @@ GET /api/news?category=ai,crypto&since=24&sort=newest&q=bitcoin&limit=50
   limit     max items (default 200, cap 500)
   → { count, totalReadingMinutes, items: [{ title, link, source,
        category, publishedAt, readingMinutes, snippet, image }] }
-```
 
-```
 GET /api/article?url=<article-url>
   → { url, title, author, published, source, wordCount, readingMinutes, content }
-    full readable body text (boilerplate stripped) — what agents read to summarize a story
+    full readable body text, boilerplate stripped — what an agent reads to summarize a story
 ```
 
 ```bash
-curl "http://localhost:3000/api/news?category=agents,ai&since=24&limit=10"
-curl "http://localhost:3000/api/article?url=https://example.com/some-story"
+curl "https://mynews-nine.vercel.app/api/news?category=agents,ai&since=24&limit=10"
+curl "https://mynews-nine.vercel.app/api/article?url=https://www.theverge.com/some-story"
 ```
 
-## Connecting OpenClaw agents
+## Connect your AI agent — step by step
 
-**Option A — REST (simplest).** Your agents have `network=bridge`; point them at
-`http://<host>:3000/api/news`. Document it in their `EXTERNAL_APIS.md` like the
-other no-key APIs. Run the server on the VPS and they hit it directly.
+The API is public and keyless, so wiring any agent takes three steps.
 
-**Option B — MCP (`mcp.js`).** A wrapper exposing `get_news`, `get_article`, and
-`list_categories` as MCP tools. Registered in `~/.openclaw/openclaw.json` under
-`mcp.servers.mynews`:
+1. **Point at the API.** Base URL `https://mynews-nine.vercel.app/api`.
+2. **Get headlines.** `GET /api/news?category=ai,crypto&since=24` → titles, sources, timestamps, read-time.
+3. **Read the full story.** `GET /api/article?url=<link from step 2>` → clean body text to summarize.
+
+That's enough for any framework (LangChain, a custom tool, a cron + curl). For
+**MCP-native** agents, use the bundled server instead of raw HTTP:
+
+```bash
+npm i @modelcontextprotocol/sdk zod
+NEWS_API=https://mynews-nine.vercel.app node mcp.js   # speaks MCP over stdio
+```
+
+It exposes three tools: `get_news`, `get_article`, `list_categories`.
+
+### OpenClaw (the simplest path)
+
+Add one block to `~/.openclaw/openclaw.json` under `mcp.servers`, then restart the
+gateway — every agent gains the three tools:
 
 ```json
 "mynews": {
   "command": "/usr/bin/node",
   "args": ["/home/openclaw/newsfeed/mcp.js"],
-  "env": { "NEWS_API": "http://localhost:3000" }
+  "env": { "NEWS_API": "https://mynews-nine.vercel.app" }
 }
 ```
 
-All agents then have the three tools. A morning-news cron can fetch headlines with
-`get_news`, then `get_article` for the full text of each story it wants to summarize.
+A morning-news cron then calls `get_news` for the day's headlines and `get_article`
+for the full text of each story it wants to summarize — no scraping glue.
 
-## Deployed on the VPS
+## Deployments
 
-Runs as a systemd `--user` unit (`newsfeed.service`, `Restart=always`) on
-`100.107.141.83:3000`. Manage with:
-
-```bash
-systemctl --user restart newsfeed     # after editing feeds.js
-systemctl --user status newsfeed
-journalctl --user -u newsfeed -f
-```
-
-To redeploy after local changes: re-tar (without `node_modules`), scp, extract to
-`~/newsfeed`, `npm install --omit=dev`, `systemctl --user restart newsfeed`.
-
-## Deploy (VPS)
-
-```bash
-PORT=3000 node server.js          # or pm2 / a systemd --user unit, like your other services
-```
-
-Put it behind your existing reverse proxy if you want it on a domain. The 5-min
-cache keeps it gentle on upstream RSS.
+- **Vercel (public, online):** Express runs as a serverless function (`api/index.js` + `vercel.json`); `public/` is the static site. Auto-deploys on push to `main`.
+- **VPS (private):** a systemd `--user` unit (`newsfeed.service`, `Restart=always`) on port 3000. Manage with `systemctl --user restart|status newsfeed` and `journalctl --user -u newsfeed -f`.
 
 ## Files
 
-- `server.js` — API + static host + cache + reading-time
+- `server.js` — API + cache + reading-time + article extraction
 - `feeds.js` — the 16 categories → RSS URLs (edit this)
-- `public/` — the Cobalt-themed feed UI (`index.html`, `app.js`, `styles.css`, `tokens.css`)
-- `mcp.js` — optional MCP wrapper
+- `public/` — Cobalt-themed landing + feed (`index.html`, `dashboard.html`, `app.js`, `styles.css`, `landing.css`, `tokens.css`)
+- `api/index.js` + `vercel.json` — Vercel serverless wiring
+- `mcp.js` — MCP server (get_news / get_article / list_categories)
 - `test.js` — unit checks

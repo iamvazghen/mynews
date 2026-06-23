@@ -60,6 +60,10 @@ a { color: inherit; text-decoration: none; }
 .hero p.lede { font-size: var(--text-lg); color: var(--color-ink-2); max-width: 46ch; }
 .hero__cta { display: flex; gap: var(--space-sm); margin-top: var(--space-lg); flex-wrap: wrap; }
 
+.kicker { color: var(--color-accent); margin: 0 0 var(--space-sm); font-weight: 500; }
+.hero .eyebrow { margin-top: var(--space-md); color: var(--color-ink-3); }
+.hero .eyebrow::before { background: var(--color-ink-3); }
+
 /* code-as-hero card — graphite, hairline-framed, NO fake window dots (gate 47) */
 .code-card {
   background: var(--color-graphite); border: 1px solid var(--color-rule-2);
@@ -93,7 +97,14 @@ a { color: inherit; text-decoration: none; }
 .agents { background: var(--color-graphite); color: oklch(86% 0.01 256); border-top: none; }
 .agents .section__head h2 { color: oklch(96% 0.005 256); }
 .agents .section__head p { color: oklch(74% 0.012 256); }
-.tools { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-xl); align-items: start; }
+/* step-by-step (inside the dark agent band) */
+.steps ol { list-style: none; margin: 0 0 var(--space-2xl); padding: 0; display: grid; gap: var(--space-md); }
+.steps li { border-left: 2px solid var(--color-accent); padding-left: var(--space-md); color: oklch(80% 0.012 256); font-size: var(--text-base); }
+.steps li b { display: block; margin-bottom: 0.25rem; font-family: var(--font-display); font-weight: 600; color: oklch(96% 0.005 256); }
+.agents code { font-family: var(--font-mono); font-size: 0.8em; color: var(--color-accent); background: oklch(100% 0 0 / 0.07); padding: 0.12em 0.4em; border-radius: 4px; overflow-wrap: anywhere; }
+
+.tools { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-xl); align-items: start; }
+.openclaw { min-width: 0; }
 .tool { padding: var(--space-md) 0; border-top: 1px solid oklch(100% 0 0 / 0.1); }
 .tool b { font-family: var(--font-mono); color: var(--color-accent); font-size: var(--text-sm); }
 .tool p { margin: 0.3rem 0 0; color: oklch(74% 0.012 256); font-size: var(--text-sm); }
