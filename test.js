@@ -1,6 +1,16 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
-const { readingMinutes, filterSort, normalize, relaxXml, pickSource, resolveFallbackDate } = require("./server");
+const {
+  readingMinutes,
+  filterSort,
+  normalize,
+  relaxXml,
+  pickSource,
+  resolveFallbackDate,
+  resolveAuth,
+  normalizeSources,
+} = require("./server");
+const { getAdapter } = require("./adapters");
 
 test("readingMinutes: ~200 wpm, floor of 1", () => {
   assert.equal(readingMinutes(""), 1);
@@ -135,6 +145,101 @@ test("filterSort: without the sticky flag a scheduled category is filtered norma
   } finally {
     Date.now = realNow;
   }
+});
+
+test("resolveAuth: a source with no credentials is usable as-is", () => {
+  const r = resolveAuth({ url: "https://example.com/rss" });
+  assert.equal(r.ok, true);
+  assert.equal(r.url, "https://example.com/rss");
+});
+
+test("resolveAuth: a missing key skips the source instead of failing it", () => {
+  const prev = process.env.TEST_NEWS_KEY;
+  delete process.env.TEST_NEWS_KEY;
+  const r = resolveAuth({ url: "https://example.com/x?k={{auth}}", auth: { env: "TEST_NEWS_KEY" } });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /TEST_NEWS_KEY/);
+  if (prev !== undefined) process.env.TEST_NEWS_KEY = prev;
+});
+
+test("resolveAuth: a present key is substituted into the url", () => {
+  process.env.TEST_NEWS_KEY = "secret123";
+  const r = resolveAuth({ url: "https://example.com/x?k={{auth}}", auth: { env: "TEST_NEWS_KEY" } });
+  assert.equal(r.ok, true);
+  assert.equal(r.url, "https://example.com/x?k=secret123");
+  delete process.env.TEST_NEWS_KEY;
+});
+
+test("resolveAuth: a header key is passed through as a header", () => {
+  process.env.TEST_NEWS_KEY = "tok";
+  const r = resolveAuth({ url: "https://example.com/x", auth: { env: "TEST_NEWS_KEY", header: "X-Auth-Token" } });
+  assert.equal(r.headers["X-Auth-Token"], "tok");
+  delete process.env.TEST_NEWS_KEY;
+});
+
+test("normalizeSources: plain strings become rss sources, objects pass through", () => {
+  const out = normalizeSources(["https://a/rss.xml", { type: "json", adapter: "hn", url: "https://b" }]);
+  assert.equal(out[0].type, "rss");
+  assert.equal(out[0].url, "https://a/rss.xml");
+  assert.equal(out[1].type, "json");
+  assert.equal(out[1].adapter, "hn");
+});
+
+test("adapter gdelt: converts the seendate stamp into an ISO date", () => {
+  const out = getAdapter("gdelt")({
+    articles: [{ title: "Story", url: "https://x.com/a", seendate: "20261025T191500Z", socialimage: "https://i/x.jpg" }],
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].isoDate, "2026-10-25T19:15:00.000Z");
+  assert.equal(out[0].link, "https://x.com/a");
+});
+
+test("adapter hn: falls back to the HN permalink when a story has no url", () => {
+  const out = getAdapter("hn")({
+    hits: [{ title: "T", objectID: "12345", created_at: "2026-10-25T10:00:00Z", url: null }],
+  });
+  assert.equal(out[0].link, "https://news.ycombinator.com/item?id=12345");
+  assert.equal(out[0].isoDate, "2026-10-25T10:00:00.000Z");
+});
+
+test("adapter frankfurter: one item per currency", () => {
+  const out = getAdapter("frankfurter")({ base: "EUR", date: "2026-10-23", rates: { USD: 1.1193, JPY: 175.51 } });
+  assert.equal(out.length, 2);
+  assert.match(out[0].title, /1 EUR = [\d.]+ (USD|JPY) 2026-10-23/);
+});
+
+test("adapter openalex: rebuilds the abstract from the inverted index", () => {
+  const out = getAdapter("openalex")({
+    results: [{ display_name: "Paper", doi: "https://doi.org/x", publication_date: "2026-01-02", abstract_inverted_index: { Hello: [0], world: [1] } }],
+  });
+  assert.equal(out[0].title, "Paper");
+  assert.equal(out[0].isoDate, "2026-01-02T00:00:00.000Z");
+  assert.match(out[0].content, /Hello world/);
+});
+
+test("adapter coingecko: formats a 24h price move into a headline", () => {
+  const out = getAdapter("coingecko")([
+    { id: "bitcoin", name: "Bitcoin", symbol: "btc", current_price: 80465, price_change_percentage_24h: -3.07, market_cap: 1, total_volume: 2, image: "i", last_updated: "2026-10-25T10:00:00Z" },
+  ]);
+  assert.match(out[0].title, /Bitcoin \(BTC\) \$80465 -3\.07%/);
+});
+
+test("every configured adapter exists and every source is well formed", () => {
+  const { ALL_SOURCES, CATEGORIES } = require("./feeds");
+  const { normalizeSources } = require("./server");
+  for (const slug of Object.keys(require("./feeds").FEEDS)) {
+    for (const src of normalizeSources(require("./feeds").FEEDS[slug])) {
+      assert.ok(src.url, `source in ${slug} has no url`);
+      if (src.type === "json") {
+        assert.doesNotThrow(() => getAdapter(src.adapter), `unknown adapter "${src.adapter}" in ${slug}`);
+      }
+      if (src.auth) {
+        assert.ok(src.auth.env, `source in ${slug} declares auth without an env var`);
+      }
+    }
+  }
+  assert.ok(CATEGORIES.length >= 30);
+  assert.ok(ALL_SOURCES.length > 200);
 });
 
 test("/api/mcp: tools over HTTP, live categories, upstream 400 is isError", async () => {
