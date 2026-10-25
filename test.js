@@ -269,8 +269,18 @@ test("adapter coingecko: formats a 24h price move into a headline", () => {
   assert.match(out[0].title, /Bitcoin \(BTC\) \$80465 -3\.07%/);
 });
 
-test("every configured adapter exists and every source is well formed", () => {
-  const { ALL_SOURCES, CATEGORIES } = require("./feeds");
+test("isQuotaError: recognises a spent daily allowance, not a broken feed", () => {
+  const { isQuotaError } = require("./server");
+  assert.equal(
+    isQuotaError('HTTP 403: {"errors":["You have reached your request limit for today"]}'),
+    true
+  );
+  assert.equal(isQuotaError("HTTP 403"), false);
+  assert.equal(isQuotaError("HTTP 500"), false);
+  assert.equal(isQuotaError("fetch failed"), false);
+});
+
+test("every configured adapter exists and every source is well formed", () => {  const { ALL_SOURCES, CATEGORIES } = require("./feeds");
   const { normalizeSources } = require("./server");
   for (const slug of Object.keys(require("./feeds").FEEDS)) {
     for (const src of normalizeSources(require("./feeds").FEEDS[slug])) {

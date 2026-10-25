@@ -325,7 +325,16 @@ async function fetchSourceOnce(src) {
       headers,
       signal: AbortSignal.timeout(src.timeout || FETCH_TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // A quota rejection is not a broken feed, and it says so in the body.
+      // Keep it: the difference between "this provider is down" and "we have
+      // used up today's allowance" matters when reading the health report.
+      if (res.status === 403 || res.status === 429) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${body ? `: ${body.slice(0, 180)}` : ""}`);
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
 
     if (src.type === "json") {
       const payload = await res.json();
@@ -367,6 +376,20 @@ async function fetchSource(src) {
 
 const sourceKey = (src) => src.url;
 
+// Some providers answer 403/429 with "you have reached your request limit for
+// today" once a daily allowance is used up. That is not a broken feed — it is
+// a budget, and hammering it again wastes requests and buries the real
+// failures. Once a host says that, stop calling it until the next UTC day.
+const quotaUntil = new Map(); // host -> epoch ms
+
+const isQuotaError = (msg) =>
+  /request limit|quota|too many requests|rate limit exceeded/i.test(String(msg || ""));
+
+function nextUtcMidnight() {
+  const d = new Date();
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+}
+
 // How long a source's items stay fresh. A source may declare `ttlMinutes` to
 // override; keyed sources default to an hour, because their free tier is
 // measured in requests per DAY and a headline does not go stale in five
@@ -385,6 +408,13 @@ async function fetchSourceCached(src) {
   const hit = sourceCache.get(src.url);
   if (hit && Date.now() - hit.at < ttl) return { items: hit.items, cached: true };
 
+  // This provider's daily allowance is spent — do not call it again until the
+  // day rolls over. Retrying it would waste requests and hide real failures.
+  const until = quotaUntil.get(hostOf(src.url));
+  if (until && Date.now() < until) {
+    return { items: [], quota: true, until };
+  }
+
   const res = await fetchSource(src);
   if (res.skipped) return { items: [], skipped: res.skipped };
   sourceCache.set(src.url, { at: Date.now(), items: res.items });
@@ -400,8 +430,18 @@ async function fetchCategory(slug) {
     const key = sourceKey(src);
     if (r.status !== "fulfilled") {
       const error = String((r.reason && r.reason.message) || r.reason);
-      feedHealth.set(key, { ok: false, at: Date.now(), items: 0, error, skipped: false });
-      console.warn(`[feed] ${slug}: ${src.url} failed — ${error}`);
+      if (isQuotaError(error)) {
+        quotaUntil.set(hostOf(src.url), nextUtcMidnight());
+        feedHealth.set(key, { ok: false, at: Date.now(), items: 0, error, skipped: false, quota: true });
+        console.warn(`[feed] ${slug}: ${src.url} — daily request limit reached, pausing until 00:00 UTC`);
+      } else {
+        feedHealth.set(key, { ok: false, at: Date.now(), items: 0, error, skipped: false, quota: false });
+        console.warn(`[feed] ${slug}: ${src.url} failed — ${error}`);
+      }
+      return;
+    }
+    if (r.value && r.value.quota) {
+      feedHealth.set(key, { ok: false, at: Date.now(), items: 0, error: "daily request limit reached", skipped: false, quota: true });
       return;
     }
     if (r.value && r.value.skipped) {
@@ -453,6 +493,7 @@ app.get("/api/health", async (req, res) => {
               items: h ? h.items : null,
               error: h ? h.error : "not fetched yet",
               skipped: h ? !!h.skipped : false,
+              quota: h ? !!h.quota : false,
               reason: h ? h.reason || null : null,
             };
           }),
@@ -460,7 +501,7 @@ app.get("/api/health", async (req, res) => {
       })
     );
     const dead = report.flatMap((r) =>
-      r.feeds.filter((f) => f.ok === false).map((f) => ({ slug: r.slug, url: f.url, error: f.error }))
+      r.feeds.filter((f) => f.ok === false).map((f) => ({ slug: r.slug, url: f.url, error: f.error, quota: !!f.quota }))
     );
     const skipped = report.flatMap((r) =>
       r.feeds.filter((f) => f.skipped).map((f) => ({ slug: r.slug, url: f.url, reason: f.reason }))
@@ -576,4 +617,5 @@ module.exports = {
   resolveFallbackDate,
   resolveAuth,
   normalizeSources,
+  isQuotaError,
 };

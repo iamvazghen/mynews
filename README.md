@@ -187,6 +187,23 @@ dead host, and a second attempt would hold a concurrency slot for another full
 timeout. A cold start over ~285 sources takes about 30 s on Vercel and is
 instant on the VPS, where the process never goes cold.
 
+### When a provider runs out of daily quota
+
+Some providers answer `403` with *"you have reached your request limit for
+today"* once a daily allowance is spent — GNews does this. The server
+recognises that response, pauses the whole host until 00:00 UTC, and reports
+it separately from a broken feed:
+
+```json
+{ "url": "https://gnews.io/...", "ok": false, "quota": true,
+  "error": "daily request limit reached" }
+```
+
+So a spent budget never turns into a wall of red in the health report, and the
+feed is not hammered with requests that cannot succeed. Check the quota usage
+before adding another provider on the same key — GNews's 100 requests/day is
+easy to consume with eight sources refreshing four times a day.
+
 **The result:** categories under 10 items in 24h went **8 → 0**, daily items
 **962 → 1,822**, and `ai` alone went from 2 items / 1 source to **70 items /
 30 sources**.
