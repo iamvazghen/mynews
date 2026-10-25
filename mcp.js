@@ -58,4 +58,23 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  "check_feeds",
+  {
+    description:
+      "Report the health of every configured RSS source: per category, per feed " +
+      "whether it is alive, how many items it returned, and the last error. " +
+      "Use this to explain a thin or empty category.",
+    inputSchema: {
+      category: z.string().optional().describe("comma-separated category slugs (omit = all). See list_categories."),
+    },
+  },
+  async (args) => {
+    const p = new URLSearchParams();
+    if (args.category) p.set("category", String(args.category));
+    const data = await fetch(`${API}/api/health?${p}`).then((r) => r.json());
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
 server.connect(new StdioServerTransport());
