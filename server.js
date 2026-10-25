@@ -1,7 +1,7 @@
 const path = require("path");
 const express = require("express");
 const Parser = require("rss-parser");
-const { CATEGORIES, FEEDS } = require("./feeds");
+const { CATEGORIES, FEEDS, PERIODIC } = require("./feeds");
 
 const parser = new Parser({
   timeout: 15000,
@@ -143,11 +143,31 @@ function resolveFallbackDate(items, fetchedAt) {
 }
 
 // Filter + sort a flat item list. Pure → unit-tested.
-function filterSort(items, { sinceHours = 0, q = "", sort = "newest" } = {}) {
+// `sticky` holds category slugs that publish on a schedule (see PERIODIC in
+// feeds.js). For those, the newest batch is always kept even when it falls
+// outside the `since` window — otherwise a rolling 24h window on a Sunday
+// would hide Friday's FX reference rates and an agent would wrongly report
+// that no rates exist.
+function filterSort(items, { sinceHours = 0, q = "", sort = "newest", sticky = new Set() } = {}) {
   let out = items;
   if (sinceHours > 0) {
     const cut = Date.now() - sinceHours * 3600 * 1000;
-    out = out.filter((i) => i.publishedAt && new Date(i.publishedAt).getTime() >= cut);
+    const newestByCategory = new Map();
+    for (const i of out) {
+      const t = i.publishedAt ? new Date(i.publishedAt).getTime() : 0;
+      if (!newestByCategory.has(i.category) || t > newestByCategory.get(i.category)) {
+        newestByCategory.set(i.category, t);
+      }
+    }
+    out = out.filter((i) => {
+      const t = i.publishedAt ? new Date(i.publishedAt).getTime() : 0;
+      if (t >= cut) return true;
+      if (!sticky.has(i.category)) return false;
+      // Same UTC day as the category's newest item — a day's rates can be
+      // published in two batches (ECB morning + afternoon fix, plus RBA).
+      const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+      return day(t) === day(newestByCategory.get(i.category));
+    });
   }
   if (q) {
     const needle = q.toLowerCase();
@@ -276,6 +296,7 @@ app.get("/api/news", async (req, res) => {
       sinceHours: Number(req.query.since) || 0,
       q: req.query.q || "",
       sort: req.query.sort === "category" ? "category" : "newest",
+      sticky: PERIODIC,
     });
     const limit = Math.min(Number(req.query.limit) || 200, 500);
     res.json({

@@ -129,7 +129,7 @@ const CATEGORIES = [
     "https://www.ecb.europa.eu/rss/statpress.html",
     "https://news.google.com/rss/search?q=when:3d+(inflation+OR+CPI+OR+%22interest+rate+decision%22+OR+GDP)&hl=en-US&gl=US&ceid=US:en",
   ]},
-  { slug: "fx-rates", label: "FX Reference Rates (ECB)", feeds: [
+  { slug: "fx-rates", label: "FX Reference Rates (ECB)", periodic: true, feeds: [
     // Daily reference rates, one authoritative feed per currency.
     // 1 EUR = N units, published ~16:00 CET each TARGET day.
     //
@@ -300,4 +300,10 @@ const CATEGORIES = [
 // slug -> [urls], built once for fast lookup in the server.
 const FEEDS = Object.fromEntries(CATEGORIES.map((c) => [c.slug, c.feeds]));
 
-module.exports = { CATEGORIES, FEEDS };
+// Categories that publish on a schedule rather than continuously. Their newest
+// item can legitimately be older than the `since` window (FX reference rates are
+// published on TARGET days, so on a Sunday the latest is Friday's), so the
+// server always keeps their newest batch regardless of the window.
+const PERIODIC = new Set(CATEGORIES.filter((c) => c.periodic).map((c) => c.slug));
+
+module.exports = { CATEGORIES, FEEDS, PERIODIC };

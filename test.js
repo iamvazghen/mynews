@@ -100,3 +100,39 @@ test("resolveFallbackDate: falls back to fetch time when the feed has no dates a
   const now = Date.parse("2026-10-25T09:30:00.000Z");
   assert.equal(resolveFallbackDate([], now), "2026-10-25T09:30:00.000Z");
 });
+
+test("filterSort: a scheduled category keeps its newest batch outside the window", () => {
+  // Friday's FX rates, viewed with a 24h window on a Sunday — nothing published
+  // since Friday, so a plain window would report "no rates".
+  const items = [
+    { title: "rate friday USD", category: "fx-rates", publishedAt: "2026-10-23T13:15:00.000Z" },
+    { title: "rate friday JPY", category: "fx-rates", publishedAt: "2026-10-23T05:45:00.000Z" },
+    { title: "rate thursday", category: "fx-rates", publishedAt: "2026-10-22T13:15:00.000Z" },
+    { title: "old news", category: "currencies", publishedAt: "2026-10-01T00:00:00.000Z" },
+  ];
+  const sticky = new Set(["fx-rates"]);
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-10-25T20:00:00.000Z");
+  try {
+    const titles = filterSort(items, { sinceHours: 24, sticky }).map((i) => i.title);
+    assert.ok(titles.includes("rate friday USD"), "keeps the newest day's rate");
+    assert.ok(titles.includes("rate friday JPY"), "keeps the morning fix of the same day");
+    assert.ok(!titles.includes("rate thursday"), "drops the previous day");
+    assert.ok(!titles.includes("old news"), "still drops stale items from normal categories");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("filterSort: without the sticky flag a scheduled category is filtered normally", () => {
+  const items = [
+    { title: "rate friday", category: "fx-rates", publishedAt: "2026-10-23T13:15:00.000Z" },
+  ];
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-10-25T20:00:00.000Z");
+  try {
+    assert.equal(filterSort(items, { sinceHours: 24 }).length, 0);
+  } finally {
+    Date.now = realNow;
+  }
+});
