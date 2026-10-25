@@ -2,6 +2,7 @@ const path = require("path");
 const express = require("express");
 const Parser = require("rss-parser");
 const { CATEGORIES, FEEDS, PERIODIC } = require("./feeds");
+const { getAdapter } = require("./adapters");
 
 const parser = new Parser({
   timeout: 15000,
@@ -13,13 +14,15 @@ const parser = new Parser({
 
 const TTL = 5 * 60 * 1000; // 5 min cache per category
 const cache = new Map(); // slug -> { at, items }
-const feedHealth = new Map(); // url -> { ok, at, items, error }
+const feedHealth = new Map(); // source key -> { ok, at, items, error, skipped }
 
 const FETCH_TIMEOUT_MS = 15000;
-const MAX_CONCURRENT_FEEDS = 12; // ~195 feeds total; keeps us under rate limits (429s)
+const MAX_CONCURRENT_FEEDS = 12; // ~230 sources total; keeps us under rate limits
 const MAX_CONCURRENT_PER_HOST = 3; // one publisher must not get hammered
 const MAX_ATTEMPTS = 2; // one retry — transient resets and 429s clear fast
 const RETRY_BACKOFF_MS = 400;
+
+const USER_AGENT = "newsfeed/1.0 (+rss aggregator; https://github.com/iamvazghen/mynews)";
 
 // article-extractor is ESM-only; lazy dynamic import keeps this file CommonJS.
 let _extract;
@@ -30,9 +33,9 @@ async function getExtractor() {
 
 // --- concurrency limiter ---
 //
-// A global ceiling plus a per-host ceiling. Both matter: with ~195 feeds a
-// cold start hammers the same publishers (six hnrss.org queries, eleven Google
-// News searches), and the excess connections get reset. Per-host capping keeps
+// A global ceiling plus a per-host ceiling. Both matter: with ~230 sources a
+// cold start hammers the same publishers (several Google News searches, six
+// hnrss queries), and the excess connections get reset. Per-host capping keeps
 // us polite and stops a burst from taking down a whole category.
 
 let active = 0;
@@ -97,6 +100,7 @@ function readingMinutes(html) {
 }
 
 function pickImage(item) {
+  if (item.image) return item.image;
   if (item.enclosure && /^image\//.test(item.enclosure.type || "") && item.enclosure.url) {
     return item.enclosure.url;
   }
@@ -179,26 +183,98 @@ function filterSort(items, { sinceHours = 0, q = "", sort = "newest", sticky = n
   });
 }
 
-// --- fetch (network) ---
+// --- sources ---
+//
+// A source is either a plain RSS URL (kept as a string in feeds.js) or a typed
+// object. Plain strings are normalised once here so the fetch path only ever
+// deals with objects.
 
-// We fetch by hand rather than using parser.parseURL() for two reasons:
-//   1. some hosts (deepmind.google) gzip their response and rss-parser cannot inflate it;
-//   2. we need the raw XML to run it through relaxXml() first.
-async function fetchFeedOnce(url) {
-  const host = hostOf(url);
+function normalizeSources(list) {
+  return list.map((e) => (typeof e === "string" ? { type: "rss", url: e } : e));
+}
+
+const SOURCES = Object.fromEntries(
+  Object.entries(FEEDS).map(([slug, list]) => [slug, normalizeSources(list)])
+);
+
+// Reddit's OAuth2 client-credentials flow, token fetched per request (they
+// last an hour, but a per-request token costs one call and never goes stale).
+async function redditAccessToken(id, secret) {
+  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+    method: "POST",
+    headers: {
+      "User-Agent": USER_AGENT,
+      "content-type": "application/x-www-form-urlencoded",
+      authorization: "Basic " + Buffer.from(`${id}:${secret}`).toString("base64"),
+    },
+    body: "grant_type=client_credentials",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`reddit token: HTTP ${res.status}`);
+  const body = await res.json();
+  if (!body.access_token) throw new Error(`reddit token: ${body.error || "no access_token"}`);
+  return body.access_token;
+}
+
+// Resolve credentials. A source whose credentials are absent is SKIPPED, not
+// failed — so the feed list can name every integration and still work with
+// only some of them configured.
+function resolveAuth(src) {
+  const a = src.auth;
+  if (!a) return { ok: true, url: src.url, headers: {} };
+
+  if (a.type === "reddit-oauth") {
+    const id = process.env[a.env];
+    const secret = process.env[a.secretEnv];
+    if (!id || !secret) return { ok: false, reason: `needs ${a.env} + ${a.secretEnv}` };
+    return { ok: true, url: src.url, headers: {}, oauth: { id, secret } };
+  }
+
+  const token = process.env[a.env];
+  if (!token) return { ok: false, reason: `needs ${a.env}` };
+  const headers = {};
+  if (a.header) headers[a.header] = token;
+  return {
+    ok: true,
+    url: src.url.replace(/\{\{auth\}\}/g, encodeURIComponent(token)),
+    headers,
+  };
+}
+
+async function fetchSourceOnce(src) {
+  const auth = resolveAuth(src);
+  if (!auth.ok) return { skipped: auth.reason };
+
+  const headers = {
+    "User-Agent": USER_AGENT,
+    accept: src.type === "json" ? "application/json, */*" : "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    ...auth.headers,
+  };
+
+  if (auth.oauth) {
+    headers.authorization = `Bearer ${await redditAccessToken(auth.oauth.id, auth.oauth.secret)}`;
+  }
+
+  const host = hostOf(auth.url);
   await acquire(host);
   try {
-    const res = await fetch(url, {
+    const res = await fetch(auth.url, {
       redirect: "follow",
-      headers: {
-        "User-Agent": "newsfeed/1.0 (+rss aggregator)",
-        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers,
+      signal: AbortSignal.timeout(src.timeout || FETCH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (src.type === "json") {
+      const payload = await res.json();
+      const adapter = getAdapter(src.adapter);
+      return { items: adapter(payload, src) || [] };
+    }
+
+    // rss / atom — inflate before parsing, then relax malformed XML
     const xml = await res.text();
-    return await parser.parseString(relaxXml(xml));
+    const parsed = await parser.parseString(relaxXml(xml));
+    return { items: parsed.items || [] };
   } finally {
     release(host);
   }
@@ -206,11 +282,11 @@ async function fetchFeedOnce(url) {
 
 // One retry with jittered backoff. Connection resets and 429s are transient;
 // a dead feed stays dead and is reported by /api/health.
-async function fetchFeed(url) {
+async function fetchSource(src) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await fetchFeedOnce(url);
+      return await fetchSourceOnce(src);
     } catch (err) {
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
@@ -221,25 +297,32 @@ async function fetchFeed(url) {
   throw lastError;
 }
 
+const sourceKey = (src) => src.url;
+
 async function fetchCategory(slug) {
   const hit = cache.get(slug);
   if (hit && Date.now() - hit.at < TTL) return hit.items;
-  const urls = FEEDS[slug] || [];
-  const results = await Promise.allSettled(urls.map((u) => fetchFeed(u)));
+  const sources = SOURCES[slug] || [];
+  const results = await Promise.allSettled(sources.map((s) => fetchSource(s)));
   const items = [];
   results.forEach((r, i) => {
-    const url = urls[i];
+    const src = sources[i];
+    const key = sourceKey(src);
     if (r.status !== "fulfilled") {
-      // dead feed → skip, don't break the page, but make it visible in the log
       const error = String((r.reason && r.reason.message) || r.reason);
-      feedHealth.set(url, { ok: false, at: Date.now(), items: 0, error });
-      console.warn(`[feed] ${slug}: ${url} failed — ${error}`);
+      feedHealth.set(key, { ok: false, at: Date.now(), items: 0, error, skipped: false });
+      console.warn(`[feed] ${slug}: ${src.url} failed — ${error}`);
+      return;
+    }
+    if (r.value && r.value.skipped) {
+      // Missing credentials — not an error, just not configured.
+      feedHealth.set(key, { ok: null, at: Date.now(), items: 0, error: null, skipped: true, reason: r.value.skipped });
       return;
     }
     const parsed = r.value.items || [];
     const fallbackDate = resolveFallbackDate(parsed, Date.now());
     for (const it of parsed) items.push(normalize(it, slug, fallbackDate));
-    feedHealth.set(url, { ok: true, at: Date.now(), items: parsed.length, error: null });
+    feedHealth.set(key, { ok: true, at: Date.now(), items: parsed.length, error: null, skipped: false });
   });
   cache.set(slug, { at: Date.now(), items });
   return items;
@@ -259,12 +342,12 @@ app.get("/api/categories", (req, res) => {
 });
 
 app.get("/api/health", async (req, res) => {
-  // Per-feed status for every configured source — this is how you see a dead feed
-  // instead of guessing why a category looks thin.
+  // Per-source status for every configured source — this is how you see a dead
+  // feed, or an integration you have not supplied a key for yet.
   try {
     const slugs = req.query.category
-      ? String(req.query.category).split(",").map((s) => s.trim()).filter((s) => FEEDS[s])
-      : Object.keys(FEEDS);
+      ? String(req.query.category).split(",").map((s) => s.trim()).filter((s) => SOURCES[s])
+      : Object.keys(SOURCES);
     const report = await Promise.all(
       slugs.map(async (slug) => {
         const items = await fetchCategory(slug);
@@ -272,15 +355,28 @@ app.get("/api/health", async (req, res) => {
           slug,
           label: (CATEGORIES.find((c) => c.slug === slug) || {}).label || slug,
           totalItems: items.length,
-          feeds: (FEEDS[slug] || []).map((url) => {
-            const h = feedHealth.get(url);
-            return { url, ok: h ? h.ok : null, items: h ? h.items : null, error: h ? h.error : "not fetched yet" };
+          feeds: (SOURCES[slug] || []).map((src) => {
+            const h = feedHealth.get(sourceKey(src));
+            return {
+              url: src.url,
+              adapter: src.adapter || "rss",
+              ok: h ? h.ok : null,
+              items: h ? h.items : null,
+              error: h ? h.error : "not fetched yet",
+              skipped: h ? !!h.skipped : false,
+              reason: h ? h.reason || null : null,
+            };
           }),
         };
       })
     );
-    const dead = report.flatMap((r) => r.feeds.filter((f) => f.ok === false).map((f) => ({ slug: r.slug, url: f.url, error: f.error })));
-    res.json({ categories: report.length, deadFeeds: dead, report });
+    const dead = report.flatMap((r) =>
+      r.feeds.filter((f) => f.ok === false).map((f) => ({ slug: r.slug, url: f.url, error: f.error }))
+    );
+    const skipped = report.flatMap((r) =>
+      r.feeds.filter((f) => f.skipped).map((f) => ({ slug: r.slug, url: f.url, reason: f.reason }))
+    );
+    res.json({ categories: report.length, deadFeeds: dead, skippedSources: skipped, report });
   } catch (err) {
     res.status(502).json({ error: "health check failed", detail: String(err.message || err) });
   }
@@ -289,8 +385,8 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/news", async (req, res) => {
   try {
     const slugs = req.query.category
-      ? String(req.query.category).split(",").map((s) => s.trim()).filter((s) => FEEDS[s])
-      : Object.keys(FEEDS);
+      ? String(req.query.category).split(",").map((s) => s.trim()).filter((s) => SOURCES[s])
+      : Object.keys(SOURCES);
     const items = (await Promise.all(slugs.map(fetchCategory))).flat();
     const filtered = filterSort(items, {
       sinceHours: Number(req.query.since) || 0,
@@ -347,5 +443,8 @@ module.exports = {
   normalize,
   relaxXml,
   pickSource,
+  pickImage,
   resolveFallbackDate,
+  resolveAuth,
+  normalizeSources,
 };

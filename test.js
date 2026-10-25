@@ -136,3 +136,28 @@ test("filterSort: without the sticky flag a scheduled category is filtered norma
     Date.now = realNow;
   }
 });
+
+test("/api/mcp: tools over HTTP, live categories, upstream 400 is isError", async () => {
+  const { app } = require("./server");
+  const srv = app.listen(0);
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  process.env.NEWS_API = base;
+  const rpc = (id, method, params = {}) =>
+    fetch(`${base}/api/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+    }).then((r) => r.json());
+  try {
+    const tools = (await rpc(1, "tools/list")).result.tools.map((t) => t.name).sort();
+    assert.deepStrictEqual(tools, ["check_feeds", "get_article", "get_news", "list_categories"]);
+    const cats = await rpc(2, "tools/call", { name: "list_categories", arguments: {} });
+    const { CATEGORIES } = require("./feeds");
+    assert.strictEqual(JSON.parse(cats.result.content[0].text).length, CATEGORIES.length);
+    const bad = await rpc(3, "tools/call", { name: "get_article", arguments: { url: "not-a-url" } });
+    assert.strictEqual(bad.result.isError, true);
+  } finally {
+    delete process.env.NEWS_API;
+    srv.close();
+  }
+});
