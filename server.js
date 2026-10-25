@@ -97,12 +97,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 //     of 9 returned 200 with the minute budget untouched, so 150ms is plenty.
 //   gnews.io — documented as 1 request/second; 8 concurrent gave six 429s.
 //     This is the one chain that genuinely serialises the cold start.
-//   hnrss.org — no published limit, but 6 concurrent produced one 502.
+//   hnrss.org — no longer used; Hacker News comes from the Algolia index.
 //   api.twelvedata.com — 8 API credits/minute; a 5-symbol batch costs 5.
 const HOST_MIN_INTERVAL_MS = {
   "content.guardianapis.com": 150,
   "gnews.io": 1100,
-  "hnrss.org": 300,
+  "hnrss.org": 700, // kept for any future hnrss source; unused today
   "newsapi.org": 300,
   "api.twelvedata.com": 1200,
   "www.reddit.com": 600,

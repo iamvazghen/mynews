@@ -102,8 +102,7 @@ endpoints, all keyless:
 | `openalex` | scholarly works, abstracts reconstructed from the inverted index |
 | `devto` | working engineers writing about what they built |
 | `stackexchange` | the questions themselves, with vote counts and answer counts |
-| `hn` | Hacker News via the public Algolia index (newest-first, any topic) |
-| `openlibrary` | books by subject, with covers and first-publish years |
+| `hn` | Hacker News via the public Algolia index (newest-first, any topic) || `openlibrary` | books by subject, with covers and first-publish years |
 | `frankfurter` | ECB FX reference rates for 30 currencies in one keyless call |
 | `coingecko` | crypto market snapshot — price, 24h move, volume |
 | `gnews` | 80,000+ sources in 41 languages, with the real publisher (keyed) |
@@ -179,7 +178,6 @@ the gaps are measured rather than guessed:
 | --- | --- | --- |
 | `content.guardianapis.com` | 150 ms | 60 req/**minute**, no per-second cap — 9 at once left the budget untouched |
 | `gnews.io` | 1100 ms | genuinely 1 req/second — 8 concurrent gave six 429s |
-| `hnrss.org` | 300 ms | 6 concurrent produced one 502 |
 | `api.twelvedata.com` | 1200 ms | 8 API credits/minute; a 5-symbol batch costs 5 |
 
 The per-feed timeout is 10 s and a timeout is **not** retried — a slow host is a

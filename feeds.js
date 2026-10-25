@@ -21,9 +21,11 @@
 //
 // Two URL patterns worth knowing:
 //   news.google.com/rss/search?q=<terms>+when:2d    — Google News search
-//   hnrss.org/newest?q=<terms>&points=<n>&count=30   — Hacker News search
-// The `count=30` on hnrss matters: without it those endpoints intermittently
-// return HTTP 502.
+//   hn.algolia.com/api/v1/search_by_date?query=<terms>&tags=story
+// Hacker News comes from the public Algolia index rather than hnrss.org:
+// the same stories and the same filters, but no per-second rate limit —
+// hnrss.org was answering 502 and timing out under a cold start, and
+// `numericFilters=points>50` does the job `&points=50` used to do.
 
 // Google News search feed — the reliable way to keep any topic populated.
 // Google ranks by relevance and stamps every item with a real publish time.
@@ -85,9 +87,9 @@ const CATEGORIES = [
     api("hn", hn("LLM")),
   ]},
   { slug: "agents", label: "AI Agents", feeds: [
-    "https://hnrss.org/newest?q=AI+agents&count=30",
-    "https://hnrss.org/newest?q=LLM+agent&count=30",
-    "https://hnrss.org/newest?q=agentic&points=30",
+    api("hn", "https://hn.algolia.com/api/v1/search_by_date?query=AI+agents&tags=story&hitsPerPage=30"),
+    api("hn", "https://hn.algolia.com/api/v1/search_by_date?query=LLM+agent&tags=story&hitsPerPage=30"),
+    api("hn", "https://hn.algolia.com/api/v1/search_by_date?query=agentic&tags=story&hitsPerPage=30&numericFilters=points%3E30"),
     "https://blog.cloudflare.com/rss/",
     "https://github.blog/feed/",
     "https://news.google.com/rss/search?q=%22AI+agent%22+when:7d&hl=en-US&gl=US&ceid=US:en",
@@ -97,7 +99,7 @@ const CATEGORIES = [
     api("arxiv", "http://export.arxiv.org/api/query?search_query=cat:cs.MA+OR+cat:cs.HC&max_results=12&sortBy=submittedDate&sortOrder=descending", { type: "atom" }),
   ]},
   { slug: "coding-tech", label: "Coding & Tech", feeds: [
-    "https://hnrss.org/frontpage?points=100",
+    api("hn", "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30&numericFilters=points%3E100"),
     "https://lobste.rs/rss",
     "https://www.theverge.com/rss/index.xml",
     "https://feeds.arstechnica.com/arstechnica/index",
@@ -122,7 +124,7 @@ const CATEGORIES = [
     // fallback date so they survive the 24h window instead of vanishing.
     "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml",
     "https://mshibanami.github.io/GitHubTrendingRSS/weekly/all.xml",
-    "https://hnrss.org/show?points=50",
+    api("hn", "https://hn.algolia.com/api/v1/search_by_date?query=Show+HN&tags=story&hitsPerPage=30&numericFilters=points%3E50"),
     "https://go.dev/blog/feed.atom",
     "https://news.google.com/rss/search?q=open+source+github+when:7d&hl=en-US&gl=US&ceid=US:en",
     // --- depth ---
@@ -133,7 +135,7 @@ const CATEGORIES = [
   // --- Business & money -------------------------------------------------
   { slug: "startups", label: "Startups", feeds: [
     "https://techcrunch.com/category/startups/feed/",
-    "https://hnrss.org/newest?q=startup&points=50&count=30",
+    api("hn", "https://hn.algolia.com/api/v1/search_by_date?query=startup&tags=story&hitsPerPage=30&numericFilters=points%3E50"),
     "https://sifted.eu/feed",
     "https://tech.eu/feed/",
     "https://www.producthunt.com/feed",
