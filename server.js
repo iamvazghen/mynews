@@ -23,11 +23,22 @@ const AUTH_TTL_MS = 60 * 60 * 1000; // keyed sources: their quota is per day
 const sourceCache = new Map(); // source url -> { at, items }
 const feedHealth = new Map(); // source key -> { ok, at, items, error, skipped }
 
-const FETCH_TIMEOUT_MS = 15000;
-const MAX_CONCURRENT_FEEDS = 12; // ~230 sources total; keeps us under rate limits
+const FETCH_TIMEOUT_MS = 10000;
+// A cold start fetches ~285 sources. Going higher looks faster on paper but
+// is not: publishers treat a burst from one IP as abuse. Measured cold start
+// (285 sources, all keys live):
+//   concurrency 24 -> 93s, 14 dead feeds
+//   concurrency 20 -> 33s,  4 dead feeds
+//   concurrency 16 -> 30s,  3 dead feeds
+// 16 it is. The per-host spacing below matters more than the global cap.
+const MAX_CONCURRENT_FEEDS = 16;
 const MAX_CONCURRENT_PER_HOST = 3; // one publisher must not get hammered
 const MAX_ATTEMPTS = 2; // one retry — transient resets and 429s clear fast
 const RETRY_BACKOFF_MS = 400;
+
+// A slow host is a dead host. Timing out twice costs two full timeouts and
+// holds a concurrency slot for the whole of each, which is what turns a
+// cold start into a timeout for the request. One attempt, then move on.
 
 const USER_AGENT = "newsfeed/1.0 (+rss aggregator; https://github.com/iamvazghen/mynews)";
 
@@ -79,18 +90,23 @@ function release(host) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Hosts that rate-limit hard and need breathing room between requests.
-// Their documented limits are per second, not per minute: GNews allows one
-// request per second, hnrss answers 502 when a burst arrives. A cold start
-// fires every source at once, so without this they all collide.
+// Hosts with hard request limits, and the minimum gap we leave between calls
+// to the same host. Tuned by measurement, not guesswork:
+//
+//   content.guardianapis.com — 60 requests/MINUTE, no per-second cap. A burst
+//     of 9 returned 200 with the minute budget untouched, so 150ms is plenty.
+//   gnews.io — documented as 1 request/second; 8 concurrent gave six 429s.
+//     This is the one chain that genuinely serialises the cold start.
+//   hnrss.org — no published limit, but 6 concurrent produced one 502.
+//   api.twelvedata.com — 8 API credits/minute; a 5-symbol batch costs 5.
 const HOST_MIN_INTERVAL_MS = {
-  "hnrss.org": 1200,
+  "content.guardianapis.com": 150,
   "gnews.io": 1100,
-  "newsapi.org": 1200,
-  "api.twelvedata.com": 1100,
-  "www.reddit.com": 1100,
-  "api.themoviedb.org": 350,
-  "content.guardianapis.com": 400,
+  "hnrss.org": 300,
+  "newsapi.org": 300,
+  "api.twelvedata.com": 1200,
+  "www.reddit.com": 600,
+  "api.themoviedb.org": 300,
 };
 const hostLastRequest = new Map();
 
@@ -329,7 +345,9 @@ async function fetchSourceOnce(src) {
 // One retry with jittered backoff. Connection resets and 429s are transient;
 // a dead feed stays dead and is reported by /api/health. A rate-limited
 // response gets a longer wait, because the limiter needs a second or two to
-// clear rather than a few hundred milliseconds.
+// clear rather than a few hundred milliseconds. A timeout is NOT retried —
+// the host is slow or gone, and a second attempt would hold a concurrency
+// slot for another full timeout.
 async function fetchSource(src) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -337,11 +355,11 @@ async function fetchSource(src) {
       return await fetchSourceOnce(src);
     } catch (err) {
       lastError = err;
-      if (attempt < MAX_ATTEMPTS) {
-        const rateLimited = /HTTP 429|HTTP 502|HTTP 503/.test(String((err && err.message) || err));
-        const backoff = rateLimited ? 2000 : RETRY_BACKOFF_MS;
-        await sleep(backoff * attempt + Math.random() * 300);
-      }
+      const timedOut = err && (err.name === "TimeoutError" || err.name === "AbortError");
+      if (timedOut || attempt >= MAX_ATTEMPTS) break;
+      const rateLimited = /HTTP 429|HTTP 502|HTTP 503/.test(String((err && err.message) || err));
+      const backoff = rateLimited ? 2000 : RETRY_BACKOFF_MS;
+      await sleep(backoff * attempt + Math.random() * 300);
     }
   }
   throw lastError;

@@ -128,11 +128,11 @@ a time. `GET /api/health` reports them under `skippedSources` with the reason.
 
 | Integration | Register at | Free tier | Used for |
 | --- | --- | --- | --- |
-| Guardian Open Platform | [bonobo.capi.gutools.co.uk/register/developer](https://bonobo.capi.gutools.co.uk/register/developer) | non-commercial, rate limited | deep sectioned coverage for 9 categories |
+| Guardian Open Platform | [bonobo.capi.gutools.co.uk/register/developer](https://bonobo.capi.gutools.co.uk/register/developer) | 500/day, 60/min, non-commercial | deep sectioned coverage for 9 categories |
 | NewsAPI | [newsapi.org/register](https://newsapi.org/register) | 100 req/day, attribution required | broad multi-publisher headlines |
 | GNews | [gnews.io/register](https://gnews.io/register) | 100 req/day, 1 req/sec, 12h delay | 8 categories, 80k+ sources |
 | TMDB | [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) | generous | film, TV and anime discovery |
-| Twelve Data | [twelvedata.com/register](https://twelvedata.com/register) | 800 credits/day, 8/min | live FX and market quotes |
+| Twelve Data | [twelvedata.com/register](https://twelvedata.com/register) | 800 credits/day, 8/min | live FX quotes |
 | Reddit OAuth2 | [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) | standard | subreddit depth (6 subreddits) |
 
 Copy `.env.example` to `.env` and fill in what you want — it lists every URL
@@ -142,7 +142,15 @@ Store them as env vars — never hardcode them. `.env` is gitignored.
 
 Locally, `npm start` loads `.env` automatically (Node's `--env-file`). On Vercel,
 set them under **Project → Settings → Environment Variables** — or with the
-CLI: `vercel env add GNEWS_KEY production --sensitive`.
+CLI, using `--value` so no trailing newline gets stored:
+
+```bash
+vercel env add GUARDIAN_KEY production --value "<key>" --sensitive
+```
+
+That last detail matters: a key with a trailing newline makes GNews answer
+`400 "You did not provide an API key"` rather than "invalid key", and the
+server now trims credentials on the way in so it cannot happen again.
 
 The Guardian key is the highest-value one: it is the only source here with
 genuinely deep per-topic coverage. Its free tier is **non-commercial** — if
@@ -157,13 +165,27 @@ own schedule. That is what makes the free-tier quotas survivable:
 | Source kind | Refresh | Why |
 | --- | --- | --- |
 | keyless RSS | 5 min | cheap, wants to be fresh |
-| keyed sources | 60 min | quotas are measured per *day* |
-| GNews | 180 min | 100 req/day — 8 sources would otherwise cost ~2,300/day |
+| Guardian | 120 min | 500 requests/day, 9 sources → ~108/day |
+| NewsAPI | 120 min | 100 requests/day, 3 sources → ~36/day |
+| GNews | 240 min | 100 requests/day, 8 sources → ~48/day |
+| TMDB, Twelve Data, Reddit | 60 min | no daily cap; Twelve Data is 8 credits/min |
 
-A source can override this with `ttlMinutes`. Hosts with hard per-second
-limits (hnrss, GNews, NewsAPI, Twelve Data, Reddit) also get a minimum gap
-between requests, so a cold start that fires all 286 sources at once does not
-trip their rate limiters.
+A source can override this with `ttlMinutes`.
+
+Hosts with hard request limits also get a **minimum gap between requests**, and
+the gaps are measured rather than guessed:
+
+| Host | Gap | Measured behaviour |
+| --- | --- | --- |
+| `content.guardianapis.com` | 150 ms | 60 req/**minute**, no per-second cap — 9 at once left the budget untouched |
+| `gnews.io` | 1100 ms | genuinely 1 req/second — 8 concurrent gave six 429s |
+| `hnrss.org` | 300 ms | 6 concurrent produced one 502 |
+| `api.twelvedata.com` | 1200 ms | 8 API credits/minute; a 5-symbol batch costs 5 |
+
+The per-feed timeout is 10 s and a timeout is **not** retried — a slow host is a
+dead host, and a second attempt would hold a concurrency slot for another full
+timeout. A cold start over ~285 sources takes about 30 s on Vercel and is
+instant on the VPS, where the process never goes cold.
 
 **The result:** categories under 10 items in 24h went **8 → 0**, daily items
 **962 → 1,822**, and `ai` alone went from 2 items / 1 source to **70 items /
