@@ -265,19 +265,23 @@ function resolveAuth(src) {
   if (!a) return { ok: true, url: src.url, headers: {} };
 
   if (a.type === "reddit-oauth") {
-    const id = process.env[a.env];
-    const secret = process.env[a.secretEnv];
+    const id = (process.env[a.env] || "").trim();
+    const secret = (process.env[a.secretEnv] || "").trim();
     if (!id || !secret) return { ok: false, reason: `needs ${a.env} + ${a.secretEnv}` };
     return { ok: true, url: src.url, headers: {}, oauth: { id, secret } };
   }
 
   const token = process.env[a.env];
-  if (!token) return { ok: false, reason: `needs ${a.env}` };
+  // Trim: a stray newline or space in an env var makes several providers
+  // answer "you did not provide an API key" rather than "invalid key", which
+  // is a confusing way to fail. (GNews does exactly this.)
+  if (!token || !token.trim()) return { ok: false, reason: `needs ${a.env}` };
+  const clean = token.trim();
   const headers = {};
-  if (a.header) headers[a.header] = token;
+  if (a.header) headers[a.header] = clean;
   return {
     ok: true,
-    url: src.url.replace(/\{\{auth\}\}/g, encodeURIComponent(token)),
+    url: src.url.replace(/\{\{auth\}\}/g, encodeURIComponent(clean)),
     headers,
   };
 }

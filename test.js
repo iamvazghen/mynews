@@ -205,6 +205,23 @@ test("resolveAuth: a header key is passed through as a header", () => {
   delete process.env.TEST_NEWS_KEY;
 });
 
+test("resolveAuth: whitespace around a key is trimmed", () => {
+  // A stray newline makes GNews answer 400 "You did not provide an API key",
+  // which is a confusing way to fail. Credentials are trimmed on the way in.
+  process.env.TEST_NEWS_KEY = "  secret123\n";
+  const r = resolveAuth({ url: "https://example.com/x?k={{auth}}", auth: { env: "TEST_NEWS_KEY" } });
+  assert.equal(r.ok, true);
+  assert.equal(r.url, "https://example.com/x?k=secret123");
+  delete process.env.TEST_NEWS_KEY;
+});
+
+test("resolveAuth: a whitespace-only key counts as missing", () => {
+  process.env.TEST_NEWS_KEY = "   \n";
+  const r = resolveAuth({ url: "https://example.com/x?k={{auth}}", auth: { env: "TEST_NEWS_KEY" } });
+  assert.equal(r.ok, false);
+  delete process.env.TEST_NEWS_KEY;
+});
+
 test("normalizeSources: plain strings become rss sources, objects pass through", () => {
   const out = normalizeSources(["https://a/rss.xml", { type: "json", adapter: "hn", url: "https://b" }]);
   assert.equal(out[0].type, "rss");
