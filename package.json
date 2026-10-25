@@ -5,7 +5,7 @@
   "description": "Multi-topic RSS news aggregator with a REST API for agents",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node --env-file-if-exists=.env server.js",
     "test": "node --test"
   },
   "dependencies": {

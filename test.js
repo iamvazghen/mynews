@@ -147,6 +147,34 @@ test("filterSort: without the sticky flag a scheduled category is filtered norma
   }
 });
 
+test("filterSort: a scheduled category keeps each feed's own newest day", () => {
+  // A daily-rate feed (Friday's ECB fix) and a live quote feed (today) live in
+  // the same category but publish on different schedules. Keeping only the
+  // category's newest day would throw the rates away.
+  const withFeed = (title, feed, publishedAt) => {
+    const o = { title, category: "fx-rates", publishedAt };
+    Object.defineProperty(o, "feed", { value: feed, enumerable: false });
+    return o;
+  };
+  const items = [
+    withFeed("ECB USD rate", "https://ecb.example/fxref-usd", "2026-10-23T13:15:00.000Z"),
+    withFeed("ECB JPY rate", "https://ecb.example/fxref-jpy", "2026-10-23T13:15:00.000Z"),
+    withFeed("ECB USD older", "https://ecb.example/fxref-usd", "2026-10-22T13:15:00.000Z"),
+    withFeed("live EUR/USD", "https://twelvedata.example/quote", "2026-10-25T20:00:00.000Z"),
+  ];
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-10-25T21:00:00.000Z");
+  try {
+    const titles = filterSort(items, { sinceHours: 24, sticky: new Set(["fx-rates"]) }).map((i) => i.title);
+    assert.ok(titles.includes("live EUR/USD"), "keeps the live quote");
+    assert.ok(titles.includes("ECB USD rate"), "keeps the rate feed's newest day");
+    assert.ok(titles.includes("ECB JPY rate"), "keeps every rate feed's newest day");
+    assert.ok(!titles.includes("ECB USD older"), "drops that feed's older entry");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test("resolveAuth: a source with no credentials is usable as-is", () => {
   const r = resolveAuth({ url: "https://example.com/rss" });
   assert.equal(r.ok, true);

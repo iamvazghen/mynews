@@ -14,8 +14,13 @@ const parser = new Parser({
   customFields: { item: ["source"] },
 });
 
-const TTL = 5 * 60 * 1000; // 5 min cache per category
-const cache = new Map(); // slug -> { at, items }
+// Caching is per SOURCE, not per category, so each source can refresh on its
+// own schedule. That matters because the keyed providers have tiny free-tier
+// quotas (GNews: 100 requests/day) and a flat 5-minute category cache would
+// blow them instantly — a category is re-fetched every time its cache expires.
+const DEFAULT_TTL_MS = 5 * 60 * 1000; // keyless RSS
+const AUTH_TTL_MS = 60 * 60 * 1000; // keyed sources: their quota is per day
+const sourceCache = new Map(); // source url -> { at, items }
 const feedHealth = new Map(); // source key -> { ok, at, items, error, skipped }
 
 const FETCH_TIMEOUT_MS = 15000;
@@ -74,6 +79,33 @@ function release(host) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Hosts that rate-limit hard and need breathing room between requests.
+// Their documented limits are per second, not per minute: GNews allows one
+// request per second, hnrss answers 502 when a burst arrives. A cold start
+// fires every source at once, so without this they all collide.
+const HOST_MIN_INTERVAL_MS = {
+  "hnrss.org": 1200,
+  "gnews.io": 1100,
+  "newsapi.org": 1200,
+  "api.twelvedata.com": 1100,
+  "www.reddit.com": 1100,
+  "api.themoviedb.org": 350,
+  "content.guardianapis.com": 400,
+};
+const hostLastRequest = new Map();
+
+// Reserve this host's next slot and wait for it. Reserving (rather than
+// just sleeping) keeps two concurrent callers from grabbing the same gap.
+async function reserveHostSlot(host) {
+  const gap = HOST_MIN_INTERVAL_MS[host];
+  if (!gap) return;
+  const last = hostLastRequest.get(host) || 0;
+  const startAt = Math.max(Date.now(), last + gap);
+  hostLastRequest.set(host, startAt);
+  const wait = startAt - Date.now();
+  if (wait > 0) await sleep(wait);
+}
+
 function hostOf(url) {
   try { return new URL(url).hostname; } catch { return url; }
 }
@@ -121,10 +153,10 @@ function pickSource(item, slug) {
   return host || slug;
 }
 
-function normalize(item, slug, fallbackDate) {
+function normalize(item, slug, fallbackDate, feedUrl) {
   const body = item["content:encoded"] || item.content || item.contentSnippet || item.summary || "";
   const text = String(item.contentSnippet || item.content || item.summary || "").replace(/<[^>]*>/g, "").trim();
-  return {
+  const out = {
     title: (item.title || "(untitled)").trim(),
     link: item.link || null,
     source: pickSource(item, slug),
@@ -134,6 +166,10 @@ function normalize(item, slug, fallbackDate) {
     snippet: text.slice(0, 240),
     image: pickImage(item),
   };
+  // Which feed this came from. Non-enumerable, so it never reaches the API
+  // response, but filterSort() needs it to reason per-feed about staleness.
+  if (feedUrl) Object.defineProperty(out, "feed", { value: feedUrl, enumerable: false });
+  return out;
 }
 
 // Feeds that ship no timestamps at all (GitHub Trending, Nikkei Asia) would be
@@ -158,21 +194,24 @@ function filterSort(items, { sinceHours = 0, q = "", sort = "newest", sticky = n
   let out = items;
   if (sinceHours > 0) {
     const cut = Date.now() - sinceHours * 3600 * 1000;
-    const newestByCategory = new Map();
+    // Newest item per FEED, not per category. A daily-rate feed and a live
+    // quote feed live in the same category but publish on different
+    // schedules — keeping only the category's newest day would throw away
+    // the rates in favour of the quote.
+    const newestByFeed = new Map();
     for (const i of out) {
+      const group = i.feed || i.category;
       const t = i.publishedAt ? new Date(i.publishedAt).getTime() : 0;
-      if (!newestByCategory.has(i.category) || t > newestByCategory.get(i.category)) {
-        newestByCategory.set(i.category, t);
-      }
+      if (!newestByFeed.has(group) || t > newestByFeed.get(group)) newestByFeed.set(group, t);
     }
     out = out.filter((i) => {
       const t = i.publishedAt ? new Date(i.publishedAt).getTime() : 0;
       if (t >= cut) return true;
       if (!sticky.has(i.category)) return false;
-      // Same UTC day as the category's newest item — a day's rates can be
+      // Same UTC day as that feed's own newest item — a day's rates can be
       // published in two batches (ECB morning + afternoon fix, plus RBA).
       const day = (ms) => new Date(ms).toISOString().slice(0, 10);
-      return day(t) === day(newestByCategory.get(i.category));
+      return day(t) === day(newestByFeed.get(i.feed || i.category));
     });
   }
   if (q) {
@@ -258,6 +297,7 @@ async function fetchSourceOnce(src) {
   }
 
   const host = hostOf(auth.url);
+  await reserveHostSlot(host);
   await acquire(host);
   try {
     const res = await fetch(auth.url, {
@@ -283,7 +323,9 @@ async function fetchSourceOnce(src) {
 }
 
 // One retry with jittered backoff. Connection resets and 429s are transient;
-// a dead feed stays dead and is reported by /api/health.
+// a dead feed stays dead and is reported by /api/health. A rate-limited
+// response gets a longer wait, because the limiter needs a second or two to
+// clear rather than a few hundred milliseconds.
 async function fetchSource(src) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -292,7 +334,9 @@ async function fetchSource(src) {
     } catch (err) {
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
-        await sleep(RETRY_BACKOFF_MS * attempt + Math.random() * 300);
+        const rateLimited = /HTTP 429|HTTP 502|HTTP 503/.test(String((err && err.message) || err));
+        const backoff = rateLimited ? 2000 : RETRY_BACKOFF_MS;
+        await sleep(backoff * attempt + Math.random() * 300);
       }
     }
   }
@@ -301,11 +345,33 @@ async function fetchSource(src) {
 
 const sourceKey = (src) => src.url;
 
+// How long a source's items stay fresh. A source may declare `ttlMinutes` to
+// override; keyed sources default to an hour, because their free tier is
+// measured in requests per DAY and a headline does not go stale in five
+// minutes.
+function ttlFor(src) {
+  if (src.ttlMinutes) return src.ttlMinutes * 60 * 1000;
+  if (src.auth) return AUTH_TTL_MS;
+  return DEFAULT_TTL_MS;
+}
+
+// Fetch a source unless its cached copy is still fresh. Returns raw items —
+// normalisation happens at assembly time so cached and fresh items are
+// treated identically.
+async function fetchSourceCached(src) {
+  const ttl = ttlFor(src);
+  const hit = sourceCache.get(src.url);
+  if (hit && Date.now() - hit.at < ttl) return { items: hit.items, cached: true };
+
+  const res = await fetchSource(src);
+  if (res.skipped) return { items: [], skipped: res.skipped };
+  sourceCache.set(src.url, { at: Date.now(), items: res.items });
+  return { items: res.items, cached: false };
+}
+
 async function fetchCategory(slug) {
-  const hit = cache.get(slug);
-  if (hit && Date.now() - hit.at < TTL) return hit.items;
   const sources = SOURCES[slug] || [];
-  const results = await Promise.allSettled(sources.map((s) => fetchSource(s)));
+  const results = await Promise.allSettled(sources.map((s) => fetchSourceCached(s)));
   const items = [];
   results.forEach((r, i) => {
     const src = sources[i];
@@ -323,10 +389,9 @@ async function fetchCategory(slug) {
     }
     const parsed = r.value.items || [];
     const fallbackDate = resolveFallbackDate(parsed, Date.now());
-    for (const it of parsed) items.push(normalize(it, slug, fallbackDate));
-    feedHealth.set(key, { ok: true, at: Date.now(), items: parsed.length, error: null, skipped: false });
+    for (const it of parsed) items.push(normalize(it, slug, fallbackDate, src.url));
+    feedHealth.set(key, { ok: true, at: Date.now(), items: parsed.length, error: null, skipped: false, cached: !!r.value.cached });
   });
-  cache.set(slug, { at: Date.now(), items });
   return items;
 }
 

@@ -106,6 +106,7 @@ endpoints, all keyless:
 | `openlibrary` | books by subject, with covers and first-publish years |
 | `frankfurter` | ECB FX reference rates for 30 currencies in one keyless call |
 | `coingecko` | crypto market snapshot — price, 24h move, volume |
+| `gnews` | 80,000+ sources in 41 languages, with the real publisher (keyed) |
 | Google News queries | one search feed per category, so no niche is ever empty |
 
 A feed entry is a plain URL string (RSS) or a typed object (JSON):
@@ -129,8 +130,9 @@ a time. `GET /api/health` reports them under `skippedSources` with the reason.
 | --- | --- | --- | --- |
 | Guardian Open Platform | [bonobo.capi.gutools.co.uk/register/developer](https://bonobo.capi.gutools.co.uk/register/developer) | non-commercial, rate limited | deep sectioned coverage for 9 categories |
 | NewsAPI | [newsapi.org/register](https://newsapi.org/register) | 100 req/day, attribution required | broad multi-publisher headlines |
+| GNews | [gnews.io/register](https://gnews.io/register) | 100 req/day, 1 req/sec, 12h delay | 8 categories, 80k+ sources |
 | TMDB | [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) | generous | film, TV and anime discovery |
-| Twelve Data | [twelvedata.com/register](https://twelvedata.com/register) | 800 req/day | live FX and market quotes |
+| Twelve Data | [twelvedata.com/register](https://twelvedata.com/register) | 800 credits/day, 8/min | live FX and market quotes |
 | Reddit OAuth2 | [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) | standard | subreddit depth (6 subreddits) |
 
 Copy `.env.example` to `.env` and fill in what you want — it lists every URL
@@ -138,10 +140,30 @@ above with the exact steps for each. Reddit needs an app id + secret (choose a
 "script" app; the redirect URI can be anything), the rest are single API keys.
 Store them as env vars — never hardcode them. `.env` is gitignored.
 
+Locally, `npm start` loads `.env` automatically (Node's `--env-file`). On Vercel,
+set them under **Project → Settings → Environment Variables** — or with the
+CLI: `vercel env add GNEWS_KEY production --sensitive`.
+
 The Guardian key is the highest-value one: it is the only source here with
 genuinely deep per-topic coverage. Its free tier is **non-commercial** — if
 MyNews ever earns money, request a commercial key at
 `https://bonobo.capi.gutools.co.uk/register/commercial` instead.
+
+### How caching works
+
+Caching is **per source**, not per category, and each source refreshes on its
+own schedule. That is what makes the free-tier quotas survivable:
+
+| Source kind | Refresh | Why |
+| --- | --- | --- |
+| keyless RSS | 5 min | cheap, wants to be fresh |
+| keyed sources | 60 min | quotas are measured per *day* |
+| GNews | 180 min | 100 req/day — 8 sources would otherwise cost ~2,300/day |
+
+A source can override this with `ttlMinutes`. Hosts with hard per-second
+limits (hnrss, GNews, NewsAPI, Twelve Data, Reddit) also get a minimum gap
+between requests, so a cold start that fires all 286 sources at once does not
+trip their rate limiters.
 
 **The result:** categories under 10 items in 24h went **8 → 0**, daily items
 **962 → 1,822**, and `ai` alone went from 2 items / 1 source to **70 items /

@@ -189,6 +189,21 @@ const adapters = {
     });
   },
 
+  // --- GNews: global news index. Free tier is 100 requests/day, so these
+  //     sources are cached for hours rather than minutes (see feeds.js).
+  //     GNews returns the real publisher, which is better than guessing it
+  //     from the link — the article URL is the publisher's own.
+  gnews(payload) {
+    const list = payload.articles || [];
+    return list.map((a) => ({
+      title: (a.title || "").trim(),
+      link: a.url,
+      isoDate: asDate(a.publishedAt),
+      content: strip(a.description || a.content),
+      image: a.image?.url || null,
+    }));
+  },
+
   // --- The Guardian Open Platform. Needs a free API key.
   guardian(payload) {
     const list = payload?.response?.results || [];
@@ -241,17 +256,22 @@ const adapters = {
   },
 
   // --- Twelve Data: FX quotes. Needs a free key.
+  //     A single symbol returns { symbol, close, ... }; a comma-separated batch
+  //     returns an object KEYED BY SYMBOL instead, so both shapes are handled.
   twelvedata(payload) {
-    const q = payload;
-    if (!q || !q.symbol) return [];
-    return [
-      {
-        title: `${q.symbol} ${q.close ?? q.price} (${q.percent_change ?? "?"}% today)`,
+    if (!payload || typeof payload !== "object") return [];
+    const quotes = payload.symbol ? [payload] : Object.values(payload).filter((q) => q && q.symbol);
+    return quotes.map((q) => {
+      const pct = q.percent_change;
+      return {
+        title: `${q.symbol} ${q.close ?? q.price ?? "?"}${pct != null ? ` (${pct}%)` : ""}`,
         link: `https://twelvedata.com/symbols/${q.symbol}`,
         isoDate: asDate(q.timestamp ? new Date(q.timestamp * 1000) : q.datetime),
-        content: strip(`Open ${q.open} High ${q.high} Low ${q.low} Close ${q.close}`),
-      },
-    ];
+        content: strip(
+          `${q.name || q.symbol} — open ${q.open ?? "?"}, high ${q.high ?? "?"}, low ${q.low ?? "?"}, close ${q.close ?? "?"}`
+        ),
+      };
+    });
   },
 };
 

@@ -152,6 +152,7 @@ const CATEGORIES = [
     gn("startup business strategy leadership"),
     api("guardian", "https://content.guardianapis.com/search?section=business&q=business&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
     api("newsapi", "https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=20&apiKey={{auth}}", { auth: { env: "NEWSAPI_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/search?q=%22venture+capital%22+OR+startup+OR+funding&maxrecords=10&lang=en&country=us&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "investments", label: "Investments", feeds: [
     "https://www.cnbc.com/id/15839069/device/rss/rss.html",
@@ -163,6 +164,7 @@ const CATEGORIES = [
     gn("stock market investing equities"),
     api("guardian", "https://content.guardianapis.com/search?section=business&q=markets&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
     api("twelvedata", "https://api.twelvedata.com/quote?symbol=EUR/USD,GBP/USD,USD/JPY&apikey={{auth}}", { auth: { env: "TWELVEDATA_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/top-headlines?category=business&maxrecords=10&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "markets", label: "Stock Markets & Equities", feeds: [
     "https://www.cnbc.com/id/10001147/device/rss/rss.html",
@@ -175,6 +177,7 @@ const CATEGORIES = [
     gn("equities shares earnings index"),
     api("guardian", "https://content.guardianapis.com/search?section=business&q=stock+market&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
     api("newsapi", "https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=20&apiKey={{auth}}", { auth: { env: "NEWSAPI_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/top-headlines?category=business&maxrecords=10&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "rates-bonds", label: "Rates, Treasuries & Bonds", feeds: [
     "https://www.federalreserve.gov/feeds/press_monetary.xml",
@@ -263,6 +266,7 @@ const CATEGORIES = [
     // --- depth + daily volume ---
     gn("bitcoin ethereum crypto blockchain"),
     api("coingecko", "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=15&page=1&sparkline=false"),
+    api("gnews", "https://gnews.io/api/v4/search?q=bitcoin+OR+ethereum+OR+cryptocurrency&maxrecords=10&lang=en&country=us&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
 
   // --- Tech-adjacent beats ---------------------------------------------
@@ -283,6 +287,7 @@ const CATEGORIES = [
     gn("(cybersecurity OR hack OR ransomware OR vulnerability)"),
     api("hn", hn("security breach")),
     api("guardian", "https://content.guardianapis.com/search?section=technology&q=cybersecurity&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/search?q=cybersecurity+OR+ransomware+OR+%22data+breach%22&maxrecords=10&lang=en&country=us&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "gaming", label: "Gaming", feeds: [
     "https://www.eurogamer.net/feed",
@@ -329,6 +334,7 @@ const CATEGORIES = [
     // --- depth + daily volume ---
     gn("space launch nasa satellite telescope"),
     api("openalex", "https://api.openalex.org/works?search=astronomy%20astrophysics&per-page=12&sort=publication_date:desc"),
+    api("gnews", "https://gnews.io/api/v4/search?q=space+OR+nasa+OR+telescope+OR+satellite&maxrecords=10&lang=en&country=us&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "climate", label: "Climate & Energy", feeds: [
     "https://www.canarymedia.com/rss",
@@ -348,6 +354,7 @@ const CATEGORIES = [
     gn("pharma biotech clinical trial drug FDA"),
     api("openalex", "https://api.openalex.org/works?search=biotechnology%20clinical%20trial&per-page=12&sort=publication_date:desc"),
     api("guardian", "https://content.guardianapis.com/search?section=society&q=health&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/top-headlines?category=health&maxrecords=10&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
 
   // --- Sports -----------------------------------------------------------
@@ -430,6 +437,7 @@ const CATEGORIES = [
     // --- depth + daily volume ---
     gn("Ukraine Germany politics government"),
     api("guardian", "https://content.guardianapis.com/search?section=world&q=Ukraine&order-by=newest&page-size=20&api-key={{auth}}", { auth: { env: "GUARDIAN_KEY" } }),
+    api("gnews", "https://gnews.io/api/v4/top-headlines?category=world&maxrecords=10&apikey={{auth}}", { auth: { env: "GNEWS_KEY" }, ttlMinutes: 180 }),
   ]},
   { slug: "armenia", label: "Armenia · Local", feeds: [
     "https://www.evnreport.com/feed/",
