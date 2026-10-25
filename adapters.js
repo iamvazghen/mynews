@@ -162,6 +162,33 @@ const adapters = {
     });
   },
 
+  // --- BLS public API v1: US CPI and unemployment, keyless.
+  //     The BLS *RSS* feeds answer 403 to datacenter IPs, but the public API
+  //     does not — so this is what actually survives on a serverless host.
+  //     Each figure is dated at its approximate release date (a month ends,
+  //     then ~2 weeks later the number is published), not at the reference
+  //     period, so it behaves like a news item rather than a stale datapoint.
+  bls(payload, src) {
+    const series = payload?.Results?.series?.[0];
+    if (!series) return [];
+    const label = src.label || series.seriesID;
+    const unit = src.unit || "";
+    const archive = src.archive || "cpi";
+    return (series.data || []).map((d) => {
+      const period = String(d.period || "");
+      const month = Number(/^M(\d{2})$/.exec(period)?.[1] || 1);
+      const year = Number(d.year);
+      // last day of the reference month, plus ~2 weeks for the release lag
+      const released = new Date(Date.UTC(year, month, 0) + 15 * 86400000);
+      return {
+        title: `${label}: ${d.value}${unit} — ${d.periodName} ${d.year} (BLS)`,
+        link: `https://www.bls.gov/news.release/archives/${archive}_${period}${year}.htm`,
+        isoDate: released.toISOString(),
+        content: `${label} for ${d.periodName} ${d.year}: ${d.value}${unit}. Series ${series.seriesID}, published by the U.S. Bureau of Labor Statistics.`,
+      };
+    });
+  },
+
   // --- The Guardian Open Platform. Needs a free API key.
   guardian(payload) {
     const list = payload?.response?.results || [];

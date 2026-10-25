@@ -37,12 +37,9 @@ const hn = (query, hits = 25) =>
 
 // A JSON adapter source. `auth` is optional; when present the URL's
 // "{{auth}}" placeholder is replaced with the env var's value.
+// A source may also carry `ua` to override the User-Agent — some publishers
+// answer 403 to anything that does not look like a browser.
 const api = (adapter, url, opts = {}) => ({ type: "json", adapter, url, ...opts });
-
-// Some publishers (the US Bureau of Labor Statistics among them) answer 403 to
-// anything that does not look like a browser. Per-source override.
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const CATEGORIES = [
   // --- AI ---------------------------------------------------------------
@@ -192,10 +189,12 @@ const CATEGORIES = [
     gn("bond yields treasury interest rate decision"),
   ]},
   { slug: "macro", label: "Economics & Inflation", feeds: [
-    // BLS serves 403 to non-browser agents, so these three carry their own UA.
-    { type: "rss", url: "https://www.bls.gov/feed/cpi.rss", ua: BROWSER_UA },
-    { type: "rss", url: "https://www.bls.gov/feed/empsit.rss", ua: BROWSER_UA },
-    { type: "rss", url: "https://www.bls.gov/feed/bls_latest.rss", ua: BROWSER_UA },
+    // The BLS RSS feeds answer 403 to datacenter IPs (so they work from the
+    // VPS but not from Vercel). The keyless BLS public API does not — so the
+    // structured series below are what actually survives on serverless.
+    api("bls", "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0", { label: "US CPI-U, all items", unit: "", archive: "cpi" }),
+    api("bls", "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0L1E", { label: "US core CPI, all items less food and energy", unit: "", archive: "cpi" }),
+    api("bls", "https://api.bls.gov/publicAPI/v1/timeseries/data/LNS14000000", { label: "US unemployment rate", unit: "%", archive: "empsit" }),
     "https://www.cnbc.com/id/20910258/device/rss/rss.html",
     "https://www.economist.com/finance-and-economics/rss.xml",
     "https://www.ecb.europa.eu/rss/statpress.html",

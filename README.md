@@ -42,9 +42,9 @@ Everything goes through **`feeds.js`** — the only file you edit. Each category
 `{ slug, label, feeds: [rss urls] }`. A dead/blocked URL is skipped so the page
 never breaks; it is also logged to stderr and visible at `GET /api/health`.
 
-- **Add a source:** drop another RSS URL into a category's `feeds` array.
+- **Add a source:** drop another RSS URL into a category's `feeds` array, or a typed entry like `{ type: "json", adapter: "hn", url: "..." }` (see the source layer below).
 - **Add a category:** append a new `{ slug, label, feeds }` object. Frontend, API and chips pick it up automatically.
-- **Check what is alive:** `GET /api/health` returns every configured feed with its status, item count and last error.
+- **Check what is alive:** `GET /api/health` returns every configured source with its status, item count and last error — and lists the ones that are skipped because a key isn't configured yet.
 
 ### Two URL patterns worth knowing
 
@@ -85,20 +85,62 @@ The financial categories are split so you can read one without the rest:
 - **FX Reference Rates (ECB)** — the *numbers*: one authoritative daily feed per currency for USD, JPY, CNY, NOK, SGD, CHF, GBP, SEK, DKK, AUD, CAD, NZD, INR, KRW, MXN, BRL, ZAR, TRY, THB and PLN (`1 EUR = N units`, published ~16:00 CET on TARGET days), plus the RBA's daily rates for AUD. These sit in their own category on purpose — a feed publishing one rate per day gets buried under a hundred breaking-news items once everything is sorted by date. Because rates are published on TARGET days, this category is marked `periodic`: the `since` window always keeps its newest day, so `?since=24` on a Sunday still returns Friday's rates instead of an empty list.
 - **Global Currencies & FX** — the *why*: FXStreet, ForexLive, and per-currency Google News for USD, JPY, CNY, NOK, SGD, CHF, EUR and GBP, so you see the policy or risk event behind a move.
 
+### The source layer — RSS plus JSON APIs
+
+RSS alone left **8 of 30 categories under 10 items in a 24-hour window**: thin
+for a daily digest, and with no depth material at all. Every category now draws
+on two kinds of source.
+
+**1. RSS / Atom** — the base layer. Free, keyless, no signup. 233 endpoints.
+
+**2. JSON APIs** — normalised to the same item shape by `adapters.js`. 45
+endpoints, all keyless:
+
+| Adapter | Gives you |
+| --- | --- |
+| `arxiv` | preprints — the actual paper, not a headline about it |
+| `openalex` | scholarly works, abstracts reconstructed from the inverted index |
+| `devto` | working engineers writing about what they built |
+| `stackexchange` | the questions themselves, with vote counts and answer counts |
+| `hn` | Hacker News via the public Algolia index (newest-first, any topic) |
+| `openlibrary` | books by subject, with covers and first-publish years |
+| `frankfurter` | ECB FX reference rates for 30 currencies in one keyless call |
+| `coingecko` | crypto market snapshot — price, 24h move, volume |
+| Google News queries | one search feed per category, so no niche is ever empty |
+
+A feed entry is a plain URL string (RSS) or a typed object (JSON):
+
+```js
+"https://example.com/rss.xml"                    // RSS
+api("hn", "https://hn.algolia.com/api/v1/...")    // JSON adapter
+api("guardian", "https://...api-key={{auth}}",
+    { auth: { env: "GUARDIAN_KEY" } })             // needs a key
+```
+
 ### Optional API keys (none required)
 
-RSS covers all 30 topics today, so **nothing is needed to run or deploy**. Add a
-key only if you want more than a source's feed exposes — each is a small change:
+**Nothing is needed to run or deploy** — all 30 topics work from keyless
+sources alone. 23 further sources are wired up but dormant until you supply
+credentials; a source whose key is missing is **skipped, never failed**, so
+you can commit the full source list and switch integrations on one env var at
+a time. `GET /api/health` reports them under `skippedSources` with the reason.
 
-| Want | Source | Key |
+| Integration | Free tier | Used for |
 | --- | --- | --- |
-| Broad multi-source headlines | [NewsAPI](https://newsapi.org) / [GNews](https://gnews.io) | free tier |
-| Trending repos (richer than the RSS mirror) | GitHub `GET /search/repositories?sort=stars` | a PAT |
-| Live FX quotes beyond the daily ECB reference | exchangerate.host / Frankfurter | none / free tier |
-| Reddit topic feeds | `reddit.com/r/<sub>/.rss` | none (already RSS) |
-| Crypto prices alongside news | CoinGecko | none |
+| [Guardian Open Platform](https://open-platform.theguardian.com/register) | ~12k req/day | deep sectioned coverage for 9 categories |
+| [NewsAPI](https://newsapi.org/register) | 100 req/day | broad multi-publisher headlines |
+| [TMDB](https://www.themoviedb.org/settings/api) | generous | film, TV and anime discovery |
+| [Twelve Data](https://twelvedata.com/) | 800 req/day | live FX and market quotes |
+| Reddit OAuth2 | standard | subreddit depth (6 subreddits) |
 
-Store keys as env vars (add `dotenv`) — never hardcode them.
+Copy `.env.example` to `.env` and fill in what you want. Reddit needs an app
+id + secret (the public `.json` endpoints answer 403 without OAuth), the rest
+are single API keys. Store them as env vars — never hardcode them. `.env` is
+gitignored.
+
+**The result:** categories under 10 items in 24h went **8 → 0**, daily items
+**962 → 1,822**, and `ai` alone went from 2 items / 1 source to **70 items /
+30 sources**.
 
 ## The API
 
@@ -122,10 +164,13 @@ GET /api/article?url=<article-url>
     full readable body text, boilerplate stripped — what an agent reads to summarize a story
 
 GET /api/health
-  → { categories, deadFeeds: [{ slug, url, error }], report: [{ slug, label,
-       totalItems, feeds: [{ url, ok, items, error }] }] }
-    per-feed status for every configured source — so a thin category is
-    explainable instead of mysterious
+  → { categories, deadFeeds: [{ slug, url, error }],
+       skippedSources: [{ slug, url, reason }],
+       report: [{ slug, label, totalItems,
+         feeds: [{ url, adapter, ok, items, error, skipped, reason }] }] }
+    per-source status for every configured source — so a thin category is
+    explainable instead of mysterious. `skipped` marks a source whose
+    credentials are not configured yet (not a failure).
 ```
 
 ```bash
@@ -175,8 +220,10 @@ for the full text of each story it wants to summarize — no scraping glue.
 
 ## Files
 
-- `server.js` — API + cache + reading-time + article extraction + feed health
-- `feeds.js` — the 30 categories → RSS URLs (edit this)
+- `server.js` — API + cache + reading-time + article extraction + feed health + MCP over HTTP
+- `feeds.js` — the 30 categories → sources (RSS URLs and JSON adapters; edit this)
+- `adapters.js` — normalisers that turn JSON API responses into feed items
+- `.env.example` — the optional API keys, documented
 - `public/` — Cobalt-themed landing + feed (`index.html`, `dashboard.html`, `app.js`, `styles.css`, `landing.css`, `tokens.css`)
 - `api/index.js` + `vercel.json` — Vercel serverless wiring
 - `mcp.js` — MCP server (get_news / get_article / list_categories / check_feeds)
