@@ -125,18 +125,23 @@ credentials; a source whose key is missing is **skipped, never failed**, so
 you can commit the full source list and switch integrations on one env var at
 a time. `GET /api/health` reports them under `skippedSources` with the reason.
 
-| Integration | Free tier | Used for |
-| --- | --- | --- |
-| [Guardian Open Platform](https://open-platform.theguardian.com/register) | ~12k req/day | deep sectioned coverage for 9 categories |
-| [NewsAPI](https://newsapi.org/register) | 100 req/day | broad multi-publisher headlines |
-| [TMDB](https://www.themoviedb.org/settings/api) | generous | film, TV and anime discovery |
-| [Twelve Data](https://twelvedata.com/) | 800 req/day | live FX and market quotes |
-| Reddit OAuth2 | standard | subreddit depth (6 subreddits) |
+| Integration | Register at | Free tier | Used for |
+| --- | --- | --- | --- |
+| Guardian Open Platform | [bonobo.capi.gutools.co.uk/register/developer](https://bonobo.capi.gutools.co.uk/register/developer) | non-commercial, rate limited | deep sectioned coverage for 9 categories |
+| NewsAPI | [newsapi.org/register](https://newsapi.org/register) | 100 req/day, attribution required | broad multi-publisher headlines |
+| TMDB | [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) | generous | film, TV and anime discovery |
+| Twelve Data | [twelvedata.com/register](https://twelvedata.com/register) | 800 req/day | live FX and market quotes |
+| Reddit OAuth2 | [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) | standard | subreddit depth (6 subreddits) |
 
-Copy `.env.example` to `.env` and fill in what you want. Reddit needs an app
-id + secret (the public `.json` endpoints answer 403 without OAuth), the rest
-are single API keys. Store them as env vars — never hardcode them. `.env` is
-gitignored.
+Copy `.env.example` to `.env` and fill in what you want — it lists every URL
+above with the exact steps for each. Reddit needs an app id + secret (choose a
+"script" app; the redirect URI can be anything), the rest are single API keys.
+Store them as env vars — never hardcode them. `.env` is gitignored.
+
+The Guardian key is the highest-value one: it is the only source here with
+genuinely deep per-topic coverage. Its free tier is **non-commercial** — if
+MyNews ever earns money, request a commercial key at
+`https://bonobo.capi.gutools.co.uk/register/commercial` instead.
 
 **The result:** categories under 10 items in 24h went **8 → 0**, daily items
 **962 → 1,822**, and `ai` alone went from 2 items / 1 source to **70 items /
