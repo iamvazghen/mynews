@@ -129,9 +129,14 @@ const CATEGORIES = [
     "https://www.ecb.europa.eu/rss/statpress.html",
     "https://news.google.com/rss/search?q=when:3d+(inflation+OR+CPI+OR+%22interest+rate+decision%22+OR+GDP)&hl=en-US&gl=US&ceid=US:en",
   ]},
-  { slug: "currencies", label: "Global Currencies & FX", feeds: [
-    // ECB euro reference rates — one authoritative daily feed per currency.
-    // This is the rate feed: 1 EUR = N units, published ~16:00 CET each TARGET day.
+  { slug: "fx-rates", label: "FX Reference Rates (ECB)", feeds: [
+    // Daily reference rates, one authoritative feed per currency.
+    // 1 EUR = N units, published ~16:00 CET each TARGET day.
+    //
+    // These live in their OWN category on purpose: a feed that publishes one
+    // rate per day gets buried under a hundred breaking-news items once
+    // everything is sorted by date. Keeping the rates separate means
+    // "give me today's rates" is one cheap, precise query.
     "https://www.ecb.europa.eu/rss/fxref-usd.html",  // US dollar
     "https://www.ecb.europa.eu/rss/fxref-jpy.html",  // Japanese yen
     "https://www.ecb.europa.eu/rss/fxref-cny.html",  // Chinese yuan
@@ -152,12 +157,13 @@ const CATEGORIES = [
     "https://www.ecb.europa.eu/rss/fxref-try.html",  // Turkish lira
     "https://www.ecb.europa.eu/rss/fxref-thb.html",  // Thai baht
     "https://www.ecb.europa.eu/rss/fxref-pln.html",  // Polish zloty
-    // Rate + market coverage
-    "https://www.rba.gov.au/rss/rss-cb-exchange-rates.xml",
+    "https://www.rba.gov.au/rss/rss-cb-exchange-rates.xml", // RBA daily rates (AUD)
+  ]},
+  { slug: "currencies", label: "Global Currencies & FX", feeds: [
+    // Market moves — *why* a pair moved: policy, carry, risk events.
+    // The numbers themselves live in the "FX Reference Rates" category above.
     "https://www.fxstreet.com/rss/news",
     "https://www.forexlive.com/feed",
-    // News per currency — the reference rates tell you the number, these tell
-    // you why it moved (policy, carry, risk events).
     "https://news.google.com/rss/search?q=when:7d+(USD+OR+%22US+dollar%22)+currency+exchange+rate&hl=en-US&gl=US&ceid=US:en",
     "https://news.google.com/rss/search?q=when:7d+(JPY+OR+yen)+currency+exchange+rate&hl=en-US&gl=US&ceid=US:en",
     "https://news.google.com/rss/search?q=when:7d+(CNY+OR+yuan)+currency+exchange+rate&hl=en-US&gl=US&ceid=US:en",

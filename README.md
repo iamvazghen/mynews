@@ -1,7 +1,7 @@
 # MyNews — Vazghen's news feed
 
 A multi-topic news aggregator that doubles as an **API your AI agents can read**.
-One small Express server pulls RSS for 29 topics, serves a designed browser feed,
+One small Express server pulls RSS for 30 topics, serves a designed browser feed,
 and exposes the same data as a REST + MCP API — including full readable article
 text, not just headlines. **No API keys required.**
 
@@ -61,13 +61,13 @@ intermittently return HTTP 502. Google News items carry the real publisher in
 `<source>`, and the server surfaces that as the card's source instead of
 `news.google.com`.
 
-## The 29 categories
+## The 30 categories
 
 | Group | Categories |
 | --- | --- |
 | **AI** | AI · Industry & Business · AI · Research & Practice · AI Agents |
 | **Tech** | Coding & Tech · Open-Source / GitHub · Cybersecurity |
-| **Money** | Startups · Business · Investments · **Stock Markets & Equities** · **Rates, Treasuries & Bonds** · **Economics & Inflation** · **Global Currencies & FX** · Crypto & Blockchain |
+| **Money** | Startups · Business · Investments · **Stock Markets & Equities** · **Rates, Treasuries & Bonds** · **Economics & Inflation** · **FX Reference Rates (ECB)** · **Global Currencies & FX** · Crypto & Blockchain |
 | **Science** | Space & Science · Climate & Energy · Health & Biotech |
 | **Culture** | Gaming · Film & TV · Marvel & DC · Manga & Anime · Reading Recs · Sneakerhead · Watches |
 | **Sports** | Basketball · Football (Soccer) · Sports · F1, Tennis, NFL |
@@ -82,11 +82,12 @@ The financial categories are split so you can read one without the rest:
 - **Stock Markets & Equities** — indices, earnings, market moves (CNBC, FT, Nikkei Asia, SCMP, Google News).
 - **Rates, Treasuries & Bonds** — policy decisions and sovereign debt: Fed monetary policy, Fed press releases, ECB press + tender operations, ECB Market Information Dissemination, Bank of England, Bank of Japan, Google News on Treasury yields.
 - **Economics & Inflation** — CPI and payrolls (BLS), euro-area statistics (ECB), macro desks (CNBC Economy, The Economist Finance & Economics), Google News on inflation / rate decisions / GDP.
-- **Global Currencies & FX** — daily reference rates from the **ECB** for USD, JPY, CNY, NOK, SGD, CHF, GBP, SEK, DKK, AUD, CAD, NZD, INR, KRW, MXN, BRL, ZAR, TRY, THB and PLN (one feed per currency, `1 EUR = N units`, published ~16:00 CET on TARGET days), plus RBA exchange rates, FXStreet, ForexLive, and per-currency Google News so you see *why* a pair moved.
+- **FX Reference Rates (ECB)** — the *numbers*: one authoritative daily feed per currency for USD, JPY, CNY, NOK, SGD, CHF, GBP, SEK, DKK, AUD, CAD, NZD, INR, KRW, MXN, BRL, ZAR, TRY, THB and PLN (`1 EUR = N units`, published ~16:00 CET on TARGET days), plus the RBA's daily rates for AUD. These sit in their own category on purpose — a feed publishing one rate per day gets buried under a hundred breaking-news items once everything is sorted by date.
+- **Global Currencies & FX** — the *why*: FXStreet, ForexLive, and per-currency Google News for USD, JPY, CNY, NOK, SGD, CHF, EUR and GBP, so you see the policy or risk event behind a move.
 
 ### Optional API keys (none required)
 
-RSS covers all 29 topics today, so **nothing is needed to run or deploy**. Add a
+RSS covers all 30 topics today, so **nothing is needed to run or deploy**. Add a
 key only if you want more than a source's feed exposes — each is a small change:
 
 | Want | Source | Key |
@@ -175,7 +176,7 @@ for the full text of each story it wants to summarize — no scraping glue.
 ## Files
 
 - `server.js` — API + cache + reading-time + article extraction + feed health
-- `feeds.js` — the 29 categories → RSS URLs (edit this)
+- `feeds.js` — the 30 categories → RSS URLs (edit this)
 - `public/` — Cobalt-themed landing + feed (`index.html`, `dashboard.html`, `app.js`, `styles.css`, `landing.css`, `tokens.css`)
 - `api/index.js` + `vercel.json` — Vercel serverless wiring
 - `mcp.js` — MCP server (get_news / get_article / list_categories / check_feeds)
