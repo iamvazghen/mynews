@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MyNews — Feed</title>
+  <meta name="description" content="30 topics, 280+ live sources, filtered and paginated — with a REST and MCP API your agents can read." />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,9 +16,13 @@
     <div class="bar__top">
       <a class="wordmark" href="./index.html">MyNews</a>
       <div class="status mono" id="status">loading…</div>
+      <button class="health mono" id="health" type="button" aria-live="polite" title="Source health">sources…</button>
     </div>
     <div class="controls">
       <input class="search" id="search" type="search" placeholder="Search headlines…" aria-label="Search headlines" />
+      <select class="select" id="source" aria-label="Publisher">
+        <option value="">All publishers</option>
+      </select>
       <select class="select" id="timeframe" aria-label="Timeframe">
         <option value="0">All time</option>
         <option value="24" selected>Past 24 hours</option>
@@ -29,6 +34,9 @@
         <option value="newest" selected>Newest first</option>
         <option value="category">By category</option>
       </select>
+      <select class="select" id="jump" aria-label="Jump to category">
+        <option value="">Jump to category…</option>
+      </select>
     </div>
     <div class="chips" id="chips" role="group" aria-label="Categories"></div>
   </header>
@@ -36,10 +44,14 @@
   <main>
     <div class="grid" id="grid"></div>
     <p class="note" id="note" hidden></p>
+    <div class="more" id="more" hidden>
+      <button class="btn-more mono" id="more-btn" type="button">Load more</button>
+      <span class="mono more__count" id="more-count"></span>
+    </div>
   </main>
 
   <footer>
-    MyNews · live RSS aggregation · agent API at <code>GET /api/news</code>
+    MyNews · live aggregation of 280+ sources · agent API at <code>GET /api/news</code>
   </footer>
 
   <script src="./app.js"></script>

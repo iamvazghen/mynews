@@ -214,27 +214,37 @@ CORS is open, so any agent or page can call it.
 GET /api/categories
   → [{ slug, label }, ...]
 
-GET /api/news?category=ai,crypto&since=24&sort=newest&q=bitcoin&limit=50
+GET /api/sources?category=ai&since=24
+  → { count, sources: [{ source, items }] }
+    every publisher currently in the feed, with its story count for the
+    window — the values for the `source` filter below.
+
+GET /api/news?category=ai,crypto&since=24&sort=newest&q=bitcoin&source=theguardian.com&limit=50&offset=0
   category  comma-separated slugs (omit = all)
   since     only items from the past N hours (0 = all time)
   sort      newest | category
   q         keyword filter on title + snippet
-  limit     max items (default 200, cap 500)
-  → { count, totalReadingMinutes, items: [{ title, link, source,
-       category, publishedAt, readingMinutes, snippet, image }] }
+  source    filter by publisher, e.g. theguardian.com
+  limit     max items in this page (default 200, cap 500)
+  offset    skip this many items — page through a feed larger than the cap
+  → { count, offset, limit, hasMore, totalReadingMinutes,
+       items: [{ title, link, source, category, publishedAt,
+                 readingMinutes, snippet, image }] }
+    `count` is how many stories match in total; `items` is the requested page.
 
 GET /api/article?url=<article-url>
   → { url, title, author, published, source, wordCount, readingMinutes, content }
     full readable body text, boilerplate stripped — what an agent reads to summarize a story
 
 GET /api/health
-  → { categories, deadFeeds: [{ slug, url, error }],
+  → { categories, deadFeeds: [{ slug, url, error, quota }],
        skippedSources: [{ slug, url, reason }],
        report: [{ slug, label, totalItems,
-         feeds: [{ url, adapter, ok, items, error, skipped, reason }] }] }
+         feeds: [{ url, adapter, ok, items, error, skipped, quota, reason }] }] }
     per-source status for every configured source — so a thin category is
     explainable instead of mysterious. `skipped` marks a source whose
-    credentials are not configured yet (not a failure).
+    credentials are not configured yet; `quota` marks one that has spent
+    its daily allowance and will recover on its own.
 ```
 
 ```bash
@@ -259,7 +269,10 @@ npm i @modelcontextprotocol/sdk zod
 NEWS_API=https://mynews-nine.vercel.app node mcp.js   # speaks MCP over stdio
 ```
 
-It exposes four tools: `get_news`, `get_article`, `list_categories`, `check_feeds`.
+It exposes five tools: `get_news`, `get_article`, `list_categories`, `list_sources`
+and `check_feeds`. The same server is also mounted over Streamable HTTP at
+`POST /api/mcp` on the deployed app, so an agent can point at the URL instead
+of spawning a process.
 
 ### OpenClaw (the simplest path)
 
@@ -290,13 +303,28 @@ for the full text of each story it wants to summarize — no scraping glue.
 - `.env.example` — the optional API keys, documented
 - `public/` — Cobalt-themed landing + feed (`index.html`, `dashboard.html`, `app.js`, `styles.css`, `landing.css`, `tokens.css`)
 - `api/index.js` + `vercel.json` — Vercel serverless wiring
-- `mcp.js` — MCP server (get_news / get_article / list_categories / check_feeds)
+- `mcp.js` — MCP server (get_news / get_article / list_categories / list_sources / check_feeds)
 - `test.js` — unit checks
 
 ## Notes on the feed layer
 
-Three things `server.js` handles that a naive `rss-parser` setup gets wrong:
+Four things `server.js` handles that a naive `rss-parser` setup gets wrong:
 
 1. **Gzip.** Some hosts (deepmind.google) gzip their response; the client inflates it before parsing.
 2. **Malformed XML.** Some publishers ship unescaped `&` inside image `srcset` attributes (restofworld.org). Bare ampersands are escaped before parsing; CDATA sections are left alone.
 3. **Undated feeds.** GitHub Trending and Nikkei Asia ship no timestamps, so the `since` window used to drop them entirely and the category rendered "no stories". Undated items now inherit a bounded fallback date — the feed's own newest entry, or the fetch time when the feed has none — so they survive the 24-hour window instead of vanishing.
+4. **Spent quotas.** A provider that has used up its daily allowance answers `403`, which looks exactly like a broken feed. The response body is read, the host is paused until 00:00 UTC, and the source is reported with `quota: true` instead of as a failure.
+
+## The browser UI
+
+`public/dashboard.html` is a thin client over the same API the agents use:
+
+- **Filter** by category (multi-select chips), publisher (dropdown of every
+  source with its story count), timeframe, or keyword.
+- **Sort** by newest, or by category — grouped, with a heading per topic.
+- **Page** through the feed with *Load more*; `offset` walks past the 500-item cap.
+- **Health pill** in the masthead shows how many sources are alive, paused on a
+  quota, unreachable, or waiting for an API key. Click it to refresh.
+- **Shareable state** — the URL carries the filters, so a link opens the same
+  filtered feed. The landing page's topic tiles deep-link into a
+  pre-selected category.

@@ -74,6 +74,25 @@ a { color: inherit; text-decoration: none; }
 .status { color: var(--color-ink-3); }
 .status b { color: var(--color-ink); font-weight: 500; }
 
+/* source-health pill — how many sources are actually feeding the feed */
+.health {
+  font: inherit;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--text-xs);
+  color: var(--color-ink-3);
+  background: transparent;
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.health:hover { border-color: var(--color-accent); color: var(--color-ink); }
+.health--warn { border-color: oklch(58% 0.20 256 / 0.4); color: var(--color-accent); }
+
 /* controls row */
 .controls {
   display: flex;
@@ -230,6 +249,41 @@ main {
 /* states */
 .note { color: var(--color-ink-3); padding: var(--space-2xl) 0; text-align: center; }
 .note--err { color: oklch(55% 0.16 25); }
+
+/* category group headings — only when sorting by category */
+.group {
+  grid-column: 1 / -1;
+  color: var(--color-ink-3);
+  border-bottom: 1px solid var(--color-rule);
+  padding-bottom: var(--space-xs);
+  margin-top: var(--space-lg);
+}
+.group:first-child { margin-top: 0; }
+
+/* load more */
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-2xl) 0 0;
+}
+.btn-more {
+  font: inherit;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  padding: 0.6rem 1.4rem;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.btn-more:hover { border-color: var(--color-accent); color: var(--color-ink); }
+.more__count { color: var(--color-ink-3); }
 
 /* reveal */
 .reveal { opacity: 0; transform: translateY(10px); transition: opacity .5s var(--ease-out), transform .5s var(--ease-out); }

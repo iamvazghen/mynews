@@ -297,6 +297,46 @@ test("every configured adapter exists and every source is well formed", () => { 
   assert.ok(ALL_SOURCES.length > 200);
 });
 
+test("/api/news: pages without overlap and filters by publisher", async () => {
+  const { app } = require("./server");
+  const srv = app.listen(0);
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    // One category only, so the test does not have to pull the whole feed.
+    const p1 = await fetch(`${base}/api/news?category=ai&since=0&limit=5&offset=0`).then((r) => r.json());
+    assert.equal(p1.limit, 5);
+    assert.equal(p1.offset, 0);
+    assert.ok(p1.items.length <= 5, "page respects the limit");
+    assert.ok(p1.count >= p1.items.length, "count is the total, not the page");
+    assert.equal(typeof p1.hasMore, "boolean");
+
+    const p2 = await fetch(`${base}/api/news?category=ai&since=0&limit=5&offset=5`).then((r) => r.json());
+    assert.equal(p2.offset, 5);
+    const links1 = new Set(p1.items.map((i) => i.link));
+    assert.equal(p2.items.filter((i) => links1.has(i.link)).length, 0, "pages do not overlap");
+
+    // Publisher filter.
+    const guardian = await fetch(`${base}/api/news?category=ai&since=0&source=theguardian.com&limit=10`).then((r) => r.json());
+    if (guardian.count > 0) {
+      assert.ok(
+        guardian.items.every((i) => i.source.includes("theguardian.com")),
+        "source filter only returns that publisher"
+      );
+    }
+
+    // Publisher index.
+    const sources = await fetch(`${base}/api/sources?category=ai&since=0`).then((r) => r.json());
+    assert.ok(sources.count > 0, "sources endpoint lists publishers");
+    assert.ok(sources.sources.every((s) => s.source && typeof s.items === "number"));
+    assert.ok(
+      sources.sources.every((s, i, a) => i === 0 || a[i - 1].items >= s.items),
+      "sources are ordered by story count"
+    );
+  } finally {
+    srv.close();
+  }
+});
+
 test("/api/mcp: tools over HTTP, live categories, upstream 400 is isError", async () => {
   const { app } = require("./server");
   const srv = app.listen(0);
@@ -310,11 +350,15 @@ test("/api/mcp: tools over HTTP, live categories, upstream 400 is isError", asyn
     }).then((r) => r.json());
   try {
     const tools = (await rpc(1, "tools/list")).result.tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["check_feeds", "get_article", "get_news", "list_categories"]);
+    assert.deepStrictEqual(tools, ["check_feeds", "get_article", "get_news", "list_categories", "list_sources"]);
     const cats = await rpc(2, "tools/call", { name: "list_categories", arguments: {} });
     const { CATEGORIES } = require("./feeds");
     assert.strictEqual(JSON.parse(cats.result.content[0].text).length, CATEGORIES.length);
-    const bad = await rpc(3, "tools/call", { name: "get_article", arguments: { url: "not-a-url" } });
+    const srcs = await rpc(3, "tools/call", { name: "list_sources", arguments: { since: 24 } });
+    const parsed = JSON.parse(srcs.result.content[0].text);
+    assert.ok(parsed.count > 0, "list_sources returns publishers");
+    assert.ok(parsed.sources.every((s) => s.source && typeof s.items === "number"));
+    const bad = await rpc(4, "tools/call", { name: "get_article", arguments: { url: "not-a-url" } });
     assert.strictEqual(bad.result.isError, true);
   } finally {
     delete process.env.NEWS_API;

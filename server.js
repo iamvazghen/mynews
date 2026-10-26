@@ -470,6 +470,32 @@ app.get("/api/categories", (req, res) => {
   res.json(CATEGORIES.map(({ slug, label }) => ({ slug, label })));
 });
 
+// Every publisher currently in the feed, with how many stories it has in the
+// requested window. The dashboard uses this to offer a source filter without
+// having to page through the whole feed first.
+app.get("/api/sources", async (req, res) => {
+  try {
+    const slugs = req.query.category
+      ? String(req.query.category).split(",").map((s) => s.trim()).filter((s) => SOURCES[s])
+      : Object.keys(SOURCES);
+    const items = (await Promise.all(slugs.map(fetchCategory))).flat();
+    const since = Number(req.query.since) || 0;
+    const cut = since > 0 ? Date.now() - since * 3600 * 1000 : 0;
+    const tally = new Map();
+    for (const i of items) {
+      if (cut && (!i.publishedAt || new Date(i.publishedAt).getTime() < cut)) continue;
+      const host = String(i.source || "unknown");
+      tally.set(host, (tally.get(host) || 0) + 1);
+    }
+    const sources = [...tally.entries()]
+      .map(([source, items]) => ({ source, items }))
+      .sort((a, b) => b.items - a.items || a.source.localeCompare(b.source));
+    res.json({ count: sources.length, sources });
+  } catch (err) {
+    res.status(502).json({ error: "fetch failed", detail: String(err.message || err) });
+  }
+});
+
 app.get("/api/health", async (req, res) => {
   // Per-source status for every configured source — this is how you see a dead
   // feed, or an integration you have not supplied a key for yet.
@@ -524,11 +550,25 @@ app.get("/api/news", async (req, res) => {
       sort: req.query.sort === "category" ? "category" : "newest",
       sticky: PERIODIC,
     });
-    const limit = Math.min(Number(req.query.limit) || 200, 500);
+
+    // Publisher filter — "theguardian.com", or several comma-separated.
+    const source = String(req.query.source || "").trim().toLowerCase();
+    const scoped = source
+      ? filtered.filter((i) => String(i.source || "").toLowerCase().split(",").some((s) => s.includes(source)))
+      : filtered;
+
+    // Paging. `count` is the number of matches, `items` is the requested page.
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const page = scoped.slice(offset, offset + limit);
+
     res.json({
-      count: filtered.length,
-      totalReadingMinutes: filtered.reduce((n, i) => n + i.readingMinutes, 0),
-      items: filtered.slice(0, limit),
+      count: scoped.length,
+      offset,
+      limit,
+      hasMore: offset + page.length < scoped.length,
+      totalReadingMinutes: scoped.reduce((n, i) => n + i.readingMinutes, 0),
+      items: page,
     });
   } catch (err) {
     res.status(502).json({ error: "fetch failed", detail: String(err.message || err) });

@@ -41,10 +41,26 @@ function buildServer(API) {
         since: z.number().optional().describe("only items from the past N hours (0 = all time)"),
         sort: z.enum(["newest", "category"]).optional(),
         q: z.string().optional().describe("keyword filter on title + snippet"),
-        limit: z.number().optional(),
+        source: z.string().optional().describe("filter by publisher, e.g. theguardian.com (see list_sources)"),
+        limit: z.number().optional().describe("max items to return (default 200, cap 500)"),
+        offset: z.number().optional().describe("skip this many items, for paging through a big feed"),
       },
     },
     async (args) => get(`/api/news?${query(args)}`)
+  );
+
+  server.registerTool(
+    "list_sources",
+    {
+      description:
+        "List every publisher in the feed with its story count for the given window. " +
+        "Use this to find the right value for get_news's `source` filter.",
+      inputSchema: {
+        category,
+        since: z.number().optional().describe("count within the past N hours (0 = all time)"),
+      },
+    },
+    async (args) => get(`/api/sources?${query(args)}`)
   );
 
   server.registerTool(
@@ -68,8 +84,10 @@ function buildServer(API) {
     "check_feeds",
     {
       description:
-        "Report the health of every configured RSS source: per category, per feed " +
+        "Report the health of every configured source: per category, per feed " +
         "whether it is alive, how many items it returned, and the last error. " +
+        "A feed marked `quota` has spent its daily allowance and will recover " +
+        "on its own; one marked `skipped` is missing its API key. " +
         "Use this to explain a thin or empty category.",
       inputSchema: { category },
     },
